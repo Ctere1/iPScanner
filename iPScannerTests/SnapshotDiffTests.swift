@@ -91,6 +91,39 @@ final class SnapshotDiffTests: XCTestCase {
         XCTAssertEqual(diff.missingCount, 1)
     }
 
+    // MARK: - scannedPorts is not a property of the host
+
+    /// What you chose to look at is not a change in the host. Diffing `scannedPorts` would flag
+    /// every host as "modified" the first time a deeper scan ran against an older baseline.
+    func testScannedPortsDifferenceIsNotAModification() {
+        let baseline = makeBaseline(records: [
+            .init(ip: "10.0.0.1", hostname: nil, mac: "AA:BB:CC:00:00:01", vendor: nil, rttMs: nil,
+                  ttl: nil, openPorts: [80], scannedPorts: [80], serviceTitle: nil)
+        ])
+        var current = host("10.0.0.1", mac: "AA:BB:CC:00:00:01", ports: [80])
+        current.scannedPorts = [22, 80, 443, 445, 3389]   // same findings, wider sweep
+
+        let diff = SnapshotDiff.compute(current: [current], baseline: baseline)
+        XCTAssertEqual(diff.modifiedCount, 0, "a wider sweep with identical findings is not a change")
+    }
+
+    func testOpenPortsDifferenceIsStillAModification() {
+        let baseline = makeBaseline(records: [
+            .init(ip: "10.0.0.1", hostname: nil, mac: "AA:BB:CC:00:00:01", vendor: nil, rttMs: nil,
+                  ttl: nil, openPorts: [80], scannedPorts: [80], serviceTitle: nil)
+        ])
+        var current = host("10.0.0.1", mac: "AA:BB:CC:00:00:01", ports: [80, 443])
+        current.scannedPorts = [80, 443]
+
+        let diff = SnapshotDiff.compute(current: [current], baseline: baseline)
+        XCTAssertEqual(diff.modifiedCount, 1)
+        if case .modified(let fields) = diff.changesByAnchor["AA:BB:CC:00:00:01"] {
+            XCTAssertEqual(fields, [.openPorts])
+        } else {
+            XCTFail("expected a modification on openPorts")
+        }
+    }
+
     // MARK: - Duplicate anchors
 
     /// The anchor is the MAC, which is not unique: proxy ARP, a multi-homed NIC, or a router

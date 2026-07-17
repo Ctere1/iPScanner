@@ -161,7 +161,10 @@ struct IPScannerCLI {
         if let v = update.vendor { merged.vendor = v }
         if let v = update.rttMs { merged.rttMs = v }
         if let v = update.ttl { merged.ttl = v }
-        if !update.openPorts.isEmpty { merged.openPorts = update.openPorts }
+        // Same rule as the GUI: only fold in ports that were actually probed.
+        if !update.scannedPorts.isEmpty {
+            merged.mergePortResults(probed: update.scannedPorts, open: update.openPorts)
+        }
         if let v = update.serviceTitle { merged.serviceTitle = v }
         merged.status = update.status
         return merged

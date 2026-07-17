@@ -36,6 +36,16 @@ enum PortScanner {
         }.joined(separator: ", ")
     }
 
+    /// What to show for a host's ports: `—` never probed · `none` probed, all closed · the list.
+    ///
+    /// The distinction is the point. `formatList([])` returns "" — correct for a list formatter,
+    /// but rendered straight into the table it produced a blank cell that read as broken and could
+    /// not tell "we never looked" from "we looked and nothing was open".
+    static func displayList(open: [Int], scanned: [Int]) -> String {
+        guard !scanned.isEmpty else { return "—" }
+        return open.isEmpty ? "none" : formatList(open)
+    }
+
     static func probe(_ ip: String, ports: [Int], timeoutMs: Int = 800) async -> [Int] {
         var open: [Int] = []
         await withTaskGroup(of: (Int, Bool).self) { group in

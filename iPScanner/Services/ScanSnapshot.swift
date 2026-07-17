@@ -19,11 +19,15 @@ struct ScanSnapshot: Codable {
         let netbiosName: String?
         let workgroup: String?
         let openPorts: [Int]
+        /// Ports actually probed; see `Host.scannedPorts`. Defaulted so existing call sites and
+        /// tests keep compiling.
+        let scannedPorts: [Int]
         let serviceTitle: String?
 
         init(ip: String, hostname: String?, mac: String?, vendor: String?,
              rttMs: Double?, ttl: Int?, netbiosName: String? = nil,
-             workgroup: String? = nil, openPorts: [Int], serviceTitle: String?) {
+             workgroup: String? = nil, openPorts: [Int], scannedPorts: [Int] = [],
+             serviceTitle: String?) {
             self.ip = ip
             self.hostname = hostname
             self.mac = mac
@@ -33,6 +37,7 @@ struct ScanSnapshot: Codable {
             self.netbiosName = netbiosName
             self.workgroup = workgroup
             self.openPorts = openPorts
+            self.scannedPorts = scannedPorts
             self.serviceTitle = serviceTitle
         }
 
@@ -49,6 +54,10 @@ struct ScanSnapshot: Codable {
             self.netbiosName = try c.decodeIfPresent(String.self, forKey: .netbiosName)
             self.workgroup = try c.decodeIfPresent(String.self, forKey: .workgroup)
             self.openPorts = try c.decodeIfPresent([Int].self, forKey: .openPorts) ?? []
+            // Files written before this key existed only ever recorded openPorts after a real port
+            // scan, so a non-empty openPorts implies those ports were probed. Empty stays "never
+            // probed", which is the honest reading of a file that never knew the difference.
+            self.scannedPorts = try c.decodeIfPresent([Int].self, forKey: .scannedPorts) ?? self.openPorts
             self.serviceTitle = try c.decodeIfPresent(String.self, forKey: .serviceTitle)
         }
     }

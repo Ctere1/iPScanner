@@ -147,7 +147,12 @@ final class ScanController {
     }
 
     func setLabel(_ value: String?, for host: Host) {
-        let key = anchor(for: host)
+        setLabel(value, forAnchor: anchor(for: host))
+    }
+
+    /// Labels are keyed by anchor, so an editor that captured the anchor when editing began can
+    /// commit safely even after the selection has moved on or the host is gone from the table.
+    func setLabel(_ value: String?, forAnchor key: String) {
         let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines)
         if let trimmed, !trimmed.isEmpty {
             labels[key] = trimmed
@@ -404,7 +409,7 @@ final class ScanController {
                     break
                 }
                 if let idx = self.index(of: id, ip: ip) {
-                    self.hosts[idx].openPorts = openPorts
+                    self.hosts[idx].mergePortResults(probed: ports, open: openPorts)
                 }
                 completed += 1
                 self.portScanProgress = (completed, targets.count)
@@ -463,6 +468,7 @@ final class ScanController {
                 netbiosName: h.netbiosName,
                 workgroup: h.workgroup,
                 openPorts: h.openPorts,
+                scannedPorts: h.scannedPorts,
                 serviceTitle: h.serviceTitle
             )
         }
@@ -484,6 +490,28 @@ final class ScanController {
 
     func reportError(_ message: String?) {
         lastError = message
+    }
+
+    /// A failure the user needs to see now, as opposed to `lastError`.
+    ///
+    /// `lastError` is rendered inline in the empty state, which only exists while there are no
+    /// hosts — right for "Enter an IP range", useless for anything else. Export and snapshot
+    /// failures can only happen once hosts exist, so every one of them was written to a property
+    /// nothing on screen was reading: the save silently did nothing and looked like it worked.
+    struct AlertMessage: Identifiable {
+        let id = UUID()
+        let title: String
+        let message: String
+    }
+
+    private(set) var alert: AlertMessage?
+
+    func report(title: String, message: String) {
+        alert = AlertMessage(title: title, message: message)
+    }
+
+    func dismissAlert() {
+        alert = nil
     }
 
     // MARK: - Comparison / diff
@@ -525,6 +553,7 @@ final class ScanController {
                 netbiosName: rec.netbiosName,
                 workgroup: rec.workgroup,
                 openPorts: rec.openPorts,
+                scannedPorts: rec.scannedPorts,
                 serviceTitle: rec.serviceTitle,
                 status: .alive
             )
@@ -660,7 +689,12 @@ final class ScanController {
                 if let v = h.netbiosName { merged.netbiosName = v }
                 if let v = h.workgroup { merged.workgroup = v }
                 if let v = h.serviceTitle { merged.serviceTitle = v }
-                merged.openPorts = h.openPorts.isEmpty ? merged.openPorts : h.openPorts
+                // Only fold in ports that were actually probed: an event that looked at nothing
+                // must not erase what an earlier phase found, and an event that probed and found
+                // nothing open must be able to say so.
+                if !h.scannedPorts.isEmpty {
+                    merged.mergePortResults(probed: h.scannedPorts, open: h.openPorts)
+                }
                 merged.status = h.status
                 hosts[idx] = merged
             } else {

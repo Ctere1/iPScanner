@@ -8,6 +8,10 @@ struct DiscoverResult: Sendable, Hashable {
     let rttMs: Double
     /// Only populated for ICMP responses. TCP fallback probes don't expose a useful TTL.
     let ttl: Int?
+    /// Ports the discovery probe tried, and which of them answered. Empty for the ICMP path — a
+    /// host that answered a ping was never port-probed, and claiming otherwise would be a lie.
+    var probedPorts: [Int] = []
+    var openPorts: [Int] = []
 }
 
 struct NetworkScanner: NetworkScanning {
@@ -56,7 +60,7 @@ struct NetworkScanner: NetworkScanning {
 
         // --- Phase 1: discover (ping → TCP fallback) with bounded concurrency ---
         // Always yield dead hosts so the UI can filter on demand without re-scanning.
-        var alive: [(ip: String, rtt: Double, ttl: Int?)] = []
+        var alive: [(ip: String, rtt: Double, ttl: Int?, probed: [Int], open: [Int])] = []
         var scanned = 0
 
         await withTaskGroup(of: (String, DiscoverResult?).self) { group in
@@ -70,8 +74,15 @@ struct NetworkScanner: NetworkScanning {
                 scanned += 1
                 continuation.yield(.progress(scanned: scanned, total: total))
                 if let result = result {
-                    alive.append((ip, result.rttMs, result.ttl))
-                    continuation.yield(.host(Host(ip: ip, rttMs: result.rttMs, ttl: result.ttl, status: .alive)))
+                    alive.append((ip, result.rttMs, result.ttl, result.probedPorts, result.openPorts))
+                    continuation.yield(.host(Host(
+                        ip: ip,
+                        rttMs: result.rttMs,
+                        ttl: result.ttl,
+                        openPorts: result.openPorts,
+                        scannedPorts: result.probedPorts,
+                        status: .alive
+                    )))
                 } else {
                     continuation.yield(.host(Host(ip: ip, status: .dead)))
                 }
@@ -101,7 +112,7 @@ struct NetworkScanner: NetworkScanning {
         await withTaskGroup(of: Host.self) { group in
             var iter = alive.makeIterator()
 
-            func enqueue(_ entry: (ip: String, rtt: Double, ttl: Int?)) {
+            func enqueue(_ entry: (ip: String, rtt: Double, ttl: Int?, probed: [Int], open: [Int])) {
                 let mac = arpTable[entry.ip]
                 let vendor = mac.flatMap { oui.vendor(forMAC: $0) }
                 group.addTask {
@@ -119,6 +130,8 @@ struct NetworkScanner: NetworkScanning {
                         ttl: entry.ttl,
                         netbiosName: nb?.computerName,
                         workgroup: nb?.workgroup,
+                        openPorts: entry.open,
+                        scannedPorts: entry.probed,
                         status: .alive
                     )
                 }
@@ -203,12 +216,17 @@ struct NetworkScanner: NetworkScanning {
     }
 
     /// Concurrent TCP probe across fallback ports. Returns probe duration in ms if any port handshakes.
+    ///
+    /// Carries the ports out with it. They used to be discarded here, so a host discovered *because*
+    /// port 445 answered still showed an empty Ports column — the scan already knew and threw it
+    /// away. `PortScanner.probe` tries all of `tcpFallbackPorts` concurrently with no early exit,
+    /// so reporting them as probed is accurate.
     static func tcpFallback(_ ip: String) async -> DiscoverResult? {
         let start = Date()
         let openPorts = await PortScanner.probe(ip, ports: tcpFallbackPorts, timeoutMs: tcpFallbackTimeoutMs)
         guard !openPorts.isEmpty else { return nil }
         let elapsedMs = max(0, Date().timeIntervalSince(start) * 1000)
         guard elapsedMs.isFinite else { return nil }
-        return DiscoverResult(rttMs: elapsedMs, ttl: nil)
+        return DiscoverResult(rttMs: elapsedMs, ttl: nil, probedPorts: tcpFallbackPorts, openPorts: openPorts)
     }
 }
