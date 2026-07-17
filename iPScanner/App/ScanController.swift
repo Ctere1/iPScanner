@@ -187,22 +187,19 @@ final class ScanController {
         if let imported = importedTargets {
             addresses = imported.targets
         } else {
-            let parsed = ScanRange.parseAll(rangeInput)
-            if let badIdx = parsed.firstInvalidIndex {
-                lastError = "Invalid range (chunk \(badIdx)). E.g. 10.0.0.0/24, 192.168.1.0/24, 172.16.5.50-172.16.5.100"
+            switch TargetResolver.resolve(range: rangeInput) {
+            case .targets(let expanded):
+                addresses = expanded
+            case .invalidChunk(let index):
+                lastError = "Invalid range (chunk \(index)). E.g. 10.0.0.0/24, 192.168.1.0/24, 172.16.5.50-172.16.5.100"
                 return
-            }
-            guard !parsed.ranges.isEmpty else {
+            case .empty:
                 lastError = "Enter an IP range (e.g. 10.0.0.0/24)."
                 return
-            }
-            // Rejects oversized input before expansion; `imported.targets` is capped by TargetFileParser.
-            guard let expanded = ScanRange.uniqueAddresses(parsed.ranges) else {
-                let span = ScanRange.totalHostCount(parsed.ranges)
-                lastError = "Total target list too large (\(span) addresses, limit \(ScanRange.maxTargets)). Narrow the range."
+            case .tooLarge(let span, let limit):
+                lastError = "Total target list too large (\(span) addresses, limit \(limit)). Narrow the range."
                 return
             }
-            addresses = expanded
         }
 
         guard !addresses.isEmpty else {

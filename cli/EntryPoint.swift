@@ -133,18 +133,18 @@ struct IPScannerCLI {
         guard let range = args.range else {
             throw Arguments.ParseError.missingRange
         }
-        let parsed = ScanRange.parseAll(range)
-        if let badIdx = parsed.firstInvalidIndex {
-            throw CLIError.invalidRange("Invalid range chunk #\(badIdx) in \"\(range)\"")
-        }
-        // Rejects oversized input before expansion; the `--file` path above is capped by TargetFileParser.
-        guard let targets = ScanRange.uniqueAddresses(parsed.ranges) else {
-            let span = ScanRange.totalHostCount(parsed.ranges)
+        switch TargetResolver.resolve(range: range) {
+        case .targets(let targets):
+            return targets
+        case .invalidChunk(let index):
+            throw CLIError.invalidRange("Invalid range chunk #\(index) in \"\(range)\"")
+        case .empty:
+            throw Arguments.ParseError.missingRange
+        case .tooLarge(let span, let limit):
             throw CLIError.invalidRange(
-                "Target list too large (\(span) addresses, limit \(ScanRange.maxTargets)). Narrow the range."
+                "Target list too large (\(span) addresses, limit \(limit)). Narrow the range."
             )
         }
-        return targets
     }
 
     private static func rangeLabel(args: Arguments) -> String {
