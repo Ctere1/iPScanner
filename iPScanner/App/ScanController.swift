@@ -6,7 +6,7 @@ import Observation
 final class ScanController {
     enum State: Equatable {
         case idle
-        case scanning(scanned: Int, total: Int)
+        case scanning(scanned: Int, total: Int, phase: ScanPhase = .discovering)
         case done(scanned: Int, total: Int)
     }
 
@@ -300,7 +300,7 @@ final class ScanController {
         elapsedWork?.cancel()
         elapsedWork = nil
         rescanScheduler.cancel()
-        if case .scanning(let s, let t) = state {
+        if case .scanning(let s, let t, _) = state {
             state = .done(scanned: s, total: t)
         }
     }
@@ -614,8 +614,8 @@ final class ScanController {
 
     private func handle(event: ScanEvent) {
         switch event {
-        case .progress(let scanned, let total):
-            state = .scanning(scanned: scanned, total: total)
+        case .progress(let scanned, let total, let phase):
+            state = .scanning(scanned: scanned, total: total, phase: phase)
         case .warning(let w):
             mergeWarning(w)
         case .host(let h):
@@ -627,7 +627,7 @@ final class ScanController {
         case .done:
             elapsedWork?.cancel()
             elapsedWork = nil
-            if case .scanning(let s, let t) = state {
+            if case .scanning(let s, let t, _) = state {
                 state = .done(scanned: s, total: t)
             } else {
                 state = .done(scanned: hosts.count, total: hosts.count)

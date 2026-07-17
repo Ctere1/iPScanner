@@ -101,8 +101,12 @@ struct StatusBar: View {
             case .idle:
                 Text("Ready")
                     .foregroundStyle(.secondary)
-            case .scanning(let scanned, let total):
-                Text("\(scanned) of \(total) scanned")
+            case .scanning(let scanned, let total, let phase):
+                // Named, because a scan is four passes and only the first knows the address count.
+                // Reporting the first alone showed "254 of 254" and then went quiet for the rest —
+                // and the fingerprint pass is the longest of them.
+                Text("\(phase.label) \(scanned) of \(total)")
+                    .monospacedDigit()
                 Text("•").foregroundStyle(.secondary)
                 Text("\(controller.aliveCount) alive").foregroundStyle(.green)
             case .done(let scanned, let total):

@@ -341,10 +341,35 @@ extension DeviceClassifierTests {
         )
     }
 
-    /// The reason the AirPlay pair must not claim Apple TV: a MacBook with AirPlay Receiver on
-    /// has exactly these ports, and calling it an Apple TV is as wrong as calling it a NAS was.
+    /// The reason no AirPlay signal may claim Apple TV: a MacBook with AirPlay Receiver on — the
+    /// macOS default — has exactly these ports, and calling it an Apple TV is as wrong as calling
+    /// it a NAS was.
     func testMacBookWithAirPlayReceiverIsAMacNotAnAppleTV() {
         XCTAssertEqual(DeviceClassifier.live.classify(macSignals()).type, .mac)
+    }
+
+    /// The bug as actually reported, twice. A Mac with AirPlay Receiver on does not merely open the
+    /// ports — it advertises `_airplay._tcp` and `_raop._tcp`, exactly as an Apple TV does. Scoring
+    /// either of those for .appleTV turns every Mac in the building into an Apple TV.
+    func testMacBookAdvertisingAirPlayOverBonjourIsStillAMac() {
+        let mac = DeviceSignals(
+            ip: "10.0.0.20",
+            vendor: "Apple, Inc.",
+            ttl: 64,
+            openPorts: [5000, 7000],
+            mdnsTypes: ["_airplay._tcp", "_raop._tcp"]
+        )
+        XCTAssertEqual(DeviceClassifier.live.classify(mac).type, .mac)
+    }
+
+    /// And with no Bonjour at all — the CLI's view — it must not become one either.
+    func testAirPlayPortsWithNoVendorAreNotAnAppleTV() {
+        XCTAssertNotEqual(type(signals(ports: [5000, 7000])), .appleTV)
+    }
+
+    /// A HomePod publishes `_raop._tcp` too, so that cannot name a speaker on its own.
+    func testRaopAloneIsNotASpeaker() {
+        XCTAssertNotEqual(type(signals(mdns: ["_raop._tcp"], vendor: "Apple, Inc.")), .speaker)
     }
 
     /// A real Apple TV is identified by what it advertises, not by the ports it shares with a Mac.
@@ -413,5 +438,38 @@ extension DeviceClassifierTests {
     func testAPlainServerIsStillAServer() {
         XCTAssertEqual(type(signals(ports: [22, 80])), .server)
         XCTAssertEqual(type(signals(ports: [22, 443, 8080])), .server)
+    }
+}
+
+// MARK: - Vendors that are two companies
+
+extension DeviceClassifierTests {
+
+    /// Reported from a real network: an HPE access point (OUI 34:3A:20) showing as a printer.
+    ///
+    /// HP Inc. and Hewlett Packard Enterprise split in 2015. HP Inc. makes the printers; HPE makes
+    /// servers and networking, and owns Aruba. A bare "hewlett" substring cannot tell them apart.
+    func testHPEAccessPointIsNotAPrinter() {
+        let hpe = DeviceSignals(
+            ip: "10.0.0.4",
+            vendor: "Hewlett Packard Enterprise",
+            ttl: 64,
+            openPorts: [22, 80, 443]
+        )
+        let result = DeviceClassifier.live.classify(hpe)
+        XCTAssertNotEqual(result.type, .printer)
+        XCTAssertEqual(result.type, .accessPoint)
+    }
+
+    /// And the split must not cost us the printers: HP Inc.'s own OUIs still read as one.
+    func testHPIncIsStillAPrinter() {
+        XCTAssertEqual(type(signals(vendor: "HP Inc.")), .printer)
+        XCTAssertEqual(type(signals(vendor: "Hewlett Packard")), .printer)
+    }
+
+    /// An HPE-branded printer would be an HP Inc. product anyway, but a real HP printer on the
+    /// network says so with a port nobody else opens.
+    func testHPPrinterOnPort9100IsStillAPrinter() {
+        XCTAssertEqual(type(signals(ports: [9100], vendor: "Hewlett Packard Enterprise")), .printer)
     }
 }

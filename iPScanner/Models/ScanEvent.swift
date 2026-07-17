@@ -1,7 +1,9 @@
 import Foundation
 
 enum ScanEvent: Sendable {
-    case progress(scanned: Int, total: Int)
+    /// `phase` defaults to `.discovering` so the many call sites that only ever meant that one
+    /// keep reading straight.
+    case progress(scanned: Int, total: Int, phase: ScanPhase = .discovering)
     case host(Host)
     case warning(ScanWarning)
     case done

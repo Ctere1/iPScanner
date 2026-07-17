@@ -33,6 +33,11 @@ struct HostInspector: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        // Material rather than a solid fill: the panel sits over the table, and a translucent
+        // surface reads as floating above it rather than as a second opaque pane bolted on. It also
+        // follows the system's light/dark and vibrancy automatically, which a hardcoded colour
+        // cannot.
+        .background(.ultraThinMaterial)
         .onAppear { beginEditing() }
         .onDisappear { commitLabelIfChanged() }
         .onChange(of: host.id) { _, _ in
@@ -316,6 +321,10 @@ struct HostInspector: View {
             }
             .buttonStyle(.bordered)
             .controlSize(.small)
+            // Each button fills its cell. Without this they hug their own labels, so "HTTP" came
+            // out half the width of "Telnet" and a grid of them read as ragged rather than as a
+            // grid — the columns were even, the buttons inside them were not.
+            .frame(maxWidth: .infinity)
         }
     }
 }

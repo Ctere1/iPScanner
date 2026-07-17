@@ -62,6 +62,10 @@ struct ContentView: View {
         let message: String
     }
 
+    /// Scan and Stop swap in place, so the button is sized for the wider of the two rather than
+    /// re-laying the toolbar out every time a scan starts or finishes.
+    private static let primaryButtonWidth: CGFloat = 78
+
     // Column visibility (persisted) — Status, Device icon, IP always visible.
     @State private var columns = ColumnVisibility()
 
@@ -368,7 +372,7 @@ struct ContentView: View {
 
     @ViewBuilder
     private func toolbarRow(_ density: ToolbarDensity) -> some View {
-        HStack(spacing: 10) {
+        HStack(alignment: .center, spacing: 10) {
             targetControls(density)
             scanControls(density)
             if density == .full {
@@ -550,16 +554,23 @@ struct ContentView: View {
 
     @ViewBuilder
     private func scanControls(_ density: ToolbarDensity) -> some View {
-        HStack(spacing: 10) {
+        // .center, and a fixed width on the primary button. The row mixes a bordered button, a
+        // segmented picker, a text field and a progress bar, and their intrinsic heights differ —
+        // left to itself the stack aligns them by whatever each one considers its baseline, which
+        // reads as a row of controls that do not quite line up. The width pin stops Scan↔Stop
+        // resizing the button and shifting everything to its right on every state change.
+        HStack(alignment: .center, spacing: 10) {
             if controller.isScanning {
                 Button("Stop", systemImage: "stop.fill") { controller.stop() }
                     .buttonStyle(.borderedProminent)
                     .tint(.red)
+                    .frame(width: Self.primaryButtonWidth)
                     .keyboardShortcut(".", modifiers: [.command])
                     .help("Stop scan (⌘.)")
             } else {
                 Button("Scan", systemImage: "play.fill") { controller.start() }
                     .buttonStyle(.borderedProminent)
+                    .frame(width: Self.primaryButtonWidth)
                     .keyboardShortcut(.return, modifiers: [])
                     .disabled(controller.rangeInput.trimmingCharacters(in: .whitespaces).isEmpty)
                     .help("Start scan (⌘R)")
@@ -584,7 +595,7 @@ struct ContentView: View {
                 rescanMenu
             }
 
-            if case .scanning(let scanned, let total) = controller.state {
+            if case .scanning(let scanned, let total, _) = controller.state {
                 ProgressView(value: Double(scanned), total: Double(max(total, 1)))
                     .progressViewStyle(.linear)
                     .frame(minWidth: density == .full || density == .compact ? 60 : 40, maxWidth: 160)

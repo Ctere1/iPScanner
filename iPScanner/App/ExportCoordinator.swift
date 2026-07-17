@@ -129,7 +129,8 @@ struct ExportCoordinator {
         // say how many addresses were actually looked at.
         let scannedTotal: Int
         switch controller.state {
-        case .scanning(_, let total), .done(_, let total): scannedTotal = total
+        case .scanning(_, let total, _): scannedTotal = total
+        case .done(_, let total): scannedTotal = total
         case .idle: scannedTotal = controller.hosts.count
         }
         return ExportService.textReport(

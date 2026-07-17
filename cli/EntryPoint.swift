@@ -42,12 +42,20 @@ struct IPScannerCLI {
         let scanner = NetworkScanner(profile: args.profile)
         var aliveByIP: [String: Host] = [:]
         var lastReportedProgress = 0
+        var lastPhase: ScanPhase = .discovering
 
         for await event in scanner.scan(addresses: targets) {
             switch event {
-            case .progress(let scanned, let total):
+            case .progress(let scanned, let total, let phase):
+                // The phase is named, and the counter resets per phase. Reporting only the first
+                // pass printed [254/254] and then went quiet for the rest of the scan — which, once
+                // fingerprinting was added, is most of it.
+                if phase != lastPhase {
+                    lastPhase = phase
+                    lastReportedProgress = 0
+                }
                 if verbose, scanned - lastReportedProgress >= max(10, total / 20) || scanned == total {
-                    stderr.write(Data("[\(scanned)/\(total)]\n".utf8))
+                    stderr.write(Data("\(phase.label.lowercased()) [\(scanned)/\(total)]\n".utf8))
                     lastReportedProgress = scanned
                 }
             case .host(let host):

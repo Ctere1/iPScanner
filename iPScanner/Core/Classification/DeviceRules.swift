@@ -21,9 +21,16 @@ enum DeviceRules {
         DeviceRule("printer.mdns.printer", .printer, W.decisive, .mdns("_printer._tcp")),
         DeviceRule("printer.mdns.ipp", .printer, W.strong, .anyMDNS(["_ipp._tcp", "_ipps._tcp"])),
         DeviceRule("printer.port.lpd515", .printer, W.strong, .port(515)),
-        DeviceRule("printer.vendor", .printer, W.strong, .anyDescrPhrase([
-            "hewlett", "hp inc", "brother", "canon", "seiko epson", "epson", "lexmark",
-            "xerox", "ricoh", "kyocera", "oki ", "konica", "zebra", "dymo"
+        // "hewlett" is qualified, not bare. HP Inc. and Hewlett Packard Enterprise have been two
+        // different companies since 2015: HP Inc. makes the printers, HPE makes servers and
+        // networking — Aruba is theirs. A bare substring match calls an HPE access point a printer,
+        // which is exactly what it did on a real network.
+        DeviceRule("printer.vendor", .printer, W.strong, .all([
+            .anyDescrPhrase([
+                "hewlett", "hp inc", "brother", "canon", "seiko epson", "epson", "lexmark",
+                "xerox", "ricoh", "kyocera", "oki ", "konica", "zebra", "dymo"
+            ]),
+            .not(.descrPhrase("hewlett packard enterprise"))
         ])),
         // 631 is IPP, but macOS runs CUPS and listens on it too. Alone it is not a printer.
         DeviceRule("printer.port.ipp631", .printer, W.moderate,
@@ -88,21 +95,25 @@ enum DeviceRules {
         DeviceRule("cast.port.8009", .tv, W.strong, .port(8009)),
         DeviceRule("cast.descr", .tv, W.strong,
                    .anyDescrPhrase(["chromecast", "google cast", "android tv", "fire tv", "roku"])),
-        DeviceRule("airplay.mdns", .appleTV, W.strong, .mdns("_airplay._tcp")),
-        DeviceRule("airplay.port.7000", .appleTV, W.weak, .port(7000)),
         //
-        // There is deliberately no rule here for "5000 and 7000 open".
+        // Nothing here scores AirPlay for .appleTV, and that is the whole point.
         //
-        // That pair means AirPlay is listening, which is true of an Apple TV *and* of any Mac with
-        // AirPlay Receiver switched on — so it cannot name either one. An earlier attempt scored it
-        // for .appleTV and got a MacBook wrong: the Mac's own evidence (Apple vendor + TTL 64)
-        // tied with it, and a tie breaks toward the more specific type, so the Mac lost to a device
-        // it merely shares a port with. An Apple TV is identified by what it advertises —
-        // `model=AppleTV*` or `_airplay._tcp` — not by a port a laptop also opens.
+        // `_airplay._tcp`, `_raop._tcp`, port 7000 and port 5000 all mean the same thing: an
+        // AirPlay receiver is listening. That is true of an Apple TV, of a HomePod, and of any Mac
+        // with AirPlay Receiver switched on — which is the default on a modern macOS. So none of
+        // them can name the device, and every attempt to make them has been wrong on a real
+        // network: first the 5000+7000 port pair, then `_airplay._tcp` itself, each time turning a
+        // MacBook Pro into an Apple TV.
         //
-        // The pair does still do one job: it guards the NAS rule below, where 5000 alone would
-        // otherwise read as Synology's web UI.
-        DeviceRule("raop.mdns", .speaker, W.moderate, .mdns("_raop._tcp")),
+        // An Apple TV is identified by what only an Apple TV says: `model=AppleTV*` in
+        // `_device-info._tcp`, or its own name. The cost is that an Apple TV which publishes no
+        // device-info reads as a Mac or as unknown — which is the right trade, because the
+        // alternative mislabels every Mac in the building.
+        DeviceRule("apple.host.appletv", .appleTV, W.strong,
+                   .anyHostToken(["appletv", "apple-tv", "atv"])),
+        // AirPlay audio. Same ambiguity: a HomePod publishes it, and so does a Mac. A hint only,
+        // so it can corroborate a speaker vendor without naming one on its own.
+        DeviceRule("raop.mdns", .speaker, W.hint, .mdns("_raop._tcp")),
         DeviceRule("speaker.vendor", .speaker, W.strong,
                    .anyDescrPhrase(["sonos", "bose", "denon", "yamaha", "harman", "marshall"])),
         DeviceRule("speaker.mdns", .speaker, 5,
@@ -183,7 +194,11 @@ enum DeviceRules {
         // as specific a statement as "Synology". At W.strong they lost to the server rules below,
         // and a UniFi AP — SSH and a web UI, like every AP — came back as "Server".
         DeviceRule("ap.vendor", .accessPoint, 5,
-                   .anyDescrPhrase(["ubiquiti", "aruba", "ruckus", "meraki", "engenius"])),
+                   .anyDescrPhrase([
+                       "ubiquiti", "aruba", "ruckus", "meraki", "engenius",
+                       // HPE owns Aruba, and its OUIs register under the parent name.
+                       "hewlett packard enterprise"
+                   ])),
         DeviceRule("ap.descr", .accessPoint, W.strong,
                    .anyDescrPhrase(["unifi", "access point", "uap-", "wireless ap"])),
         DeviceRule("router.host", .router, W.moderate, .anyHostToken([

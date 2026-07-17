@@ -102,6 +102,7 @@ struct NetworkScanner: HostDiscovering {
         let oui = OUILookup.shared
 
         // --- Phase 2: enrich (DNS + MAC + Vendor) per alive host ---
+        var enriched = 0
         await withWindowedTaskGroup(
             over: alive,
             limit: Self.enrichConcurrency,
@@ -127,6 +128,8 @@ struct NetworkScanner: HostDiscovering {
                 )
             }
         ) { host in
+            enriched += 1
+            continuation.yield(.progress(scanned: enriched, total: alive.count, phase: .identifying))
             continuation.yield(.host(host))
             return true
         }
@@ -153,6 +156,9 @@ struct NetworkScanner: HostDiscovering {
                 operation: { ip in (ip, await PortScanner.probe(ip, ports: ports)) }
             ) { ip, open in
                 fingerprinted.append((ip, open))
+                continuation.yield(.progress(
+                    scanned: fingerprinted.count, total: alive.count, phase: .fingerprinting
+                ))
                 continuation.yield(.host(Host(
                     ip: ip,
                     openPorts: open,
@@ -185,6 +191,7 @@ struct NetworkScanner: HostDiscovering {
             let targets = Array(Set(ssdpTargets + snmpTargets))
             let ssdpSet = Set(ssdpTargets)
             let snmpSet = Set(snmpTargets)
+            var probed = 0
             await withWindowedTaskGroup(
                 over: targets,
                 limit: Self.enrichConcurrency,
@@ -196,6 +203,8 @@ struct NetworkScanner: HostDiscovering {
                     return (ip, Self.describe(ssdp: await ssdp, snmp: await snmp))
                 }
             ) { ip, description in
+                probed += 1
+                continuation.yield(.progress(scanned: probed, total: targets.count, phase: .probing))
                 guard let description else { return true }
                 continuation.yield(.host(Host(ip: ip, probeDescription: description, status: .alive)))
                 return true
