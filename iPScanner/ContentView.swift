@@ -69,7 +69,7 @@ struct ContentView: View {
     // Column visibility (persisted) — Status, Device icon, IP always visible.
     @State private var columns = ColumnVisibility()
 
-    @AppStorage("iPScanner.inspectorVisible") private var inspectorVisible = true
+    @State private var inspecting: InspectRequest?
     @AppStorage("iPScanner.scanProfile") private var profileRaw: String = ScanProfile.standard.rawValue
     @AppStorage("iPScanner.rescanInterval") private var rescanIntervalRaw: String = RescanInterval.off.rawValue
 
@@ -107,32 +107,13 @@ struct ContentView: View {
         )
     }
 
-    /// Resolved against `filteredHosts`, not `hosts`.
+    /// The host whose detail sheet is open.
     ///
-    /// Against `hosts`, filtering out the selected row left the inspector open showing a host that
-    /// was no longer in the table — and since ⌘-clicking the row was the only way to deselect, the
-    /// panel was stuck with no way out. Selection itself is deliberately left alone: the Table
-    /// remembers it, so clearing the filter brings back both the row and the panel.
-    private var inspectedHost: Host? {
-        guard controller.selection.count == 1,
-              let id = controller.selection.first else { return nil }
-        return controller.filteredHosts.first { $0.id == id }
-    }
-
-    /// The inspector was purely a shadow of selection, so there was nothing to close — no button,
-    /// no Escape, no menu item. Now it has its own visibility, and selecting a host only opens it
-    /// if the user hasn't hidden it. Sticky, like Xcode's inspector.
-    ///
-    /// Get and set are deliberately asymmetric. Presentation is `visible && a host exists`, but only
-    /// `visible` is a user decision — so when the selection empties, the get flips to false and the
-    /// column collapses *without* the set ever running, and `inspectorVisible` keeps its true.
-    /// Reselect a host and the panel comes back. Writing `inspectorVisible = false` on the nil path
-    /// instead would make deselection silently un-stick the panel: the bug above describes.
-    private var inspectorPresented: Binding<Bool> {
-        Binding(
-            get: { inspectorVisible && inspectedHost != nil },
-            set: { inspectorVisible = $0 }
-        )
+    /// Holds an id rather than a `Host`, so the sheet re-resolves the row on every render and keeps
+    /// showing live data — a captured value would freeze the moment it was captured, and this panel
+    /// has a running ping monitor and a scan filling fields in behind it.
+    private struct InspectRequest: Identifiable {
+        let id: Host.ID
     }
 
     // `body` is split into three expressions on purpose: as one chain — the layout plus ten
@@ -155,22 +136,21 @@ struct ContentView: View {
                 StatusBar(controller: controller)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            // Escape means "clear the selection" in a table; the inspector closing is the
-            // consequence, not the goal. Previously there was no Escape handling at all.
+            // Escape means "clear the selection" in a table. There was no Escape handling at all
+            // before.
             .onExitCommand {
                 if !controller.selection.isEmpty { controller.selection = [] }
             }
-            // Was min 720 / ideal 1100, sized for a column that also had to hold the inspector.
-            // The inspector is its own column now, so this only has to cover the table: its own
-            // minimums are 640pt for the default columns, 800pt with every column plus Δ.
-            .navigationSplitViewColumnWidth(min: 660, ideal: 900)
+            // Sized for the toolbar, not the table. The table's own columns bottom out at 640pt for
+            // the default set, but ToolbarDensity needs ~900pt to lay out flat and drops a rung of
+            // its ladder for every ~100pt below that — so a minimum tuned to the table alone buys
+            // a window that technically fits and reads as broken.
+            .navigationSplitViewColumnWidth(min: 720, ideal: 900)
         }
-        // A real inspector column rather than a hand-rolled HStack sibling. The sibling was laid out
-        // *inside* the detail column, so opening it took its 320pt out of the table — dropping the
-        // table under the sum of its own column minimums, which made every column snap to its floor
-        // at once. As a column, this widens the window instead, and animates its own collapse.
-        .inspector(isPresented: inspectorPresented) { inspectorContent }
-        .frame(minWidth: 860, minHeight: 540)
+        // The detail panel is a sheet, so the window's width is nobody's business but the sidebar's
+        // and the toolbar's — nothing is added to it and nothing is taken out of it. That is the
+        // whole point of the sheet: the layout is a constant.
+        .frame(minWidth: 960, minHeight: 540)
         .onAppear {
             controller.profile = ScanProfile(rawValue: profileRaw) ?? .standard
             controller.rescanInterval = RescanInterval(rawValue: rescanIntervalRaw) ?? .off
@@ -186,30 +166,34 @@ struct ContentView: View {
         }
     }
 
-    /// A property rather than an inline closure on `rootLayout`: that expression already carries the
-    /// split view, a frame, an onAppear and an onChange, and is one of the ones that pushed `body`
-    /// past the type-checker in the first place — see the comment above `body`.
+    /// The host detail sheet.
+    ///
+    /// Resolved against `hosts` rather than `filteredHosts`: the sheet is opened deliberately and
+    /// blocks the table behind it, so the filter cannot change underneath it — and if it somehow
+    /// did, yanking the panel out from under someone reading it is not a courtesy.
+    ///
+    /// A function rather than an inline closure for the type-checker's sake, like the rest of the
+    /// presentations — see the comment above `body`.
     @ViewBuilder
-    private var inspectorContent: some View {
-        // No `else`. `.inspector` evaluates this closure whether or not it is presenting, but the
-        // column only exists when `inspectorPresented` is true, and that already proves a host —
-        // so HostInspector's non-optional Host is never violated, and the "Select a host"
-        // placeholder it deleted stays deleted. This `if let` is the formality, not a second state.
-        if let host = inspectedHost {
+    private func hostDetailSheet(_ request: InspectRequest) -> some View {
+        // No `else`. The only way to open this is a double-click on a row that exists, and the
+        // sheet blocks the table that could delete it — so HostInspector's non-optional Host holds,
+        // and the "Select a host" placeholder it deleted stays deleted.
+        if let host = controller.hosts.first(where: { $0.id == request.id }) {
             HostInspector(
                 host: host,
                 label: controller.label(for: host),
                 anchor: controller.anchor(for: host),
                 services: mdns.services(for: host.ip),
                 resolvedName: mdns.resolvedName(for: host),
-                onClose: { inspectorVisible = false },
+                onClose: { inspecting = nil },
                 // Keyed by the anchor captured when editing began, not by whatever is
                 // selected when the commit lands — see HostInspector.
                 onLabelChange: { anchor, newValue in
                     controller.setLabel(newValue, forAnchor: anchor)
                 }
             )
-            .inspectorColumnWidth(min: 260, ideal: 320, max: 460)
+            .frame(width: 380, height: 620)
         }
     }
 
@@ -287,6 +271,9 @@ struct ContentView: View {
         }
         .sheet(item: $portScanRequest) { request in
             portScanSheet(request)
+        }
+        .sheet(item: $inspecting) { request in
+            hostDetailSheet(request)
         }
         .alert(item: $importAlert) { alert in
             Alert(title: Text(alert.title), message: Text(alert.message), dismissButton: .default(Text("OK")))
@@ -885,10 +872,10 @@ struct ContentView: View {
                 },
                 requestBulkDelete: { pendingBulkDelete = BulkDeleteRequest(ids: $0) },
                 inspect: { id in
-                    // Selecting is not enough: the panel is sticky, so if it was closed earlier a
-                    // double-click would land on a row and appear to do nothing at all.
+                    // Select as well as open, so the row stays highlighted behind the sheet and is
+                    // still the selection when it closes.
                     controller.selection = [id]
-                    inspectorVisible = true
+                    inspecting = InspectRequest(id: id)
                 }
             )
         }

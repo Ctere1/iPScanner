@@ -36,7 +36,6 @@ enum AppearanceMode: String, CaseIterable, Identifiable {
 @main
 struct iPScannerApp: App {
     @AppStorage("iPScanner.appearance") private var appearanceRaw: String = AppearanceMode.system.rawValue
-    @AppStorage("iPScanner.inspectorVisible") private var inspectorVisible = true
 
     private var appearance: AppearanceMode {
         AppearanceMode(rawValue: appearanceRaw) ?? .system
@@ -47,11 +46,7 @@ struct iPScannerApp: App {
             ContentView()
                 .preferredColorScheme(appearance.colorScheme)
         }
-        // .contentMinSize, not .contentSize: the inspector is a real split column, so .contentSize
-        // pinned the window's *maximum* to the content's ideal too — opening the inspector shoved
-        // the window wider and then refused to let it be dragged back. This honours the minimum
-        // floor and leaves the maximum to the user.
-        .windowResizability(.contentMinSize)
+        .windowResizability(.contentSize)
         .commands {
             CommandGroup(replacing: .appInfo) {
                 Button("About iPScanner") {
@@ -134,11 +129,9 @@ struct iPScannerApp: App {
                 .keyboardShortcut("f", modifiers: [.command])
             }
             CommandGroup(after: .sidebar) {
-                // Same @AppStorage key ContentView reads, so the menu, the shortcut and the
-                // inspector's own close button are three faces of one piece of state.
-                Toggle("Inspector", isOn: $inspectorVisible)
-                    .keyboardShortcut("i", modifiers: [.command, .option])
-                Divider()
+                // No Inspector toggle. Host details are a sheet opened by double-clicking a row, so
+                // there is no such thing as the panel being "visible" independently of a host — a
+                // toggle here would have been a checkbox for a state that no longer exists.
                 Picker("Appearance", selection: $appearanceRaw) {
                     ForEach(AppearanceMode.allCases) { mode in
                         Label(mode.label, systemImage: mode.symbol)
