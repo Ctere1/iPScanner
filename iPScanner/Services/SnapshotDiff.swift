@@ -22,15 +22,20 @@ struct SnapshotDiff {
     }
 
     static func compute(current: [Host], baseline: ScanSnapshot) -> SnapshotDiff {
+        // Anchors are not unique: proxy ARP, a multi-homed NIC, or a router answering for several
+        // of its own IPs all yield two alive hosts behind one MAC. Keep the first and carry on
+        // rather than trapping on a duplicate key.
         let currentByAnchor: [String: Host] = Dictionary(
-            uniqueKeysWithValues: current.compactMap { h -> (String, Host)? in
+            current.compactMap { h -> (String, Host)? in
                 guard h.status == .alive else { return nil }
                 return (h.mac ?? h.ip, h)
-            }
+            },
+            uniquingKeysWith: { first, _ in first }
         )
 
         let baselineByAnchor: [String: ScanSnapshot.HostRecord] = Dictionary(
-            uniqueKeysWithValues: baseline.hosts.map { ($0.mac ?? $0.ip, $0) }
+            baseline.hosts.map { ($0.mac ?? $0.ip, $0) },
+            uniquingKeysWith: { first, _ in first }
         )
 
         var changes: [String: HostChange] = [:]

@@ -90,4 +90,38 @@ final class SnapshotDiffTests: XCTestCase {
         let diff = SnapshotDiff.compute(current: [dead], baseline: baseline)
         XCTAssertEqual(diff.missingCount, 1)
     }
+
+    // MARK: - Duplicate anchors
+
+    /// The anchor is the MAC, which is not unique: proxy ARP, a multi-homed NIC, or a router
+    /// answering for several of its own IPs all produce two alive hosts behind one MAC.
+    /// `Dictionary(uniqueKeysWithValues:)` trapped on that — an ordinary network crashed the app.
+    func testDuplicateMACInCurrentDoesNotCrash() {
+        let baseline = makeBaseline(records: [rec("10.0.0.1", mac: "AA:BB:CC:00:00:01")])
+        let current = [
+            host("10.0.0.1", mac: "AA:BB:CC:00:00:01"),
+            host("10.0.0.2", mac: "AA:BB:CC:00:00:01")   // same MAC, different IP
+        ]
+        let diff = SnapshotDiff.compute(current: current, baseline: baseline)
+        XCTAssertEqual(diff.missingCount, 0)
+    }
+
+    func testDuplicateMACInBaselineDoesNotCrash() {
+        let baseline = makeBaseline(records: [
+            rec("10.0.0.1", mac: "AA:BB:CC:00:00:01"),
+            rec("10.0.0.2", mac: "AA:BB:CC:00:00:01")
+        ])
+        let diff = SnapshotDiff.compute(
+            current: [host("10.0.0.1", mac: "AA:BB:CC:00:00:01")],
+            baseline: baseline
+        )
+        XCTAssertEqual(diff.newCount, 0)
+    }
+
+    /// A snapshot file is user-supplied and may repeat an IP for hosts with no MAC.
+    func testDuplicateIPAnchorWithoutMACDoesNotCrash() {
+        let baseline = makeBaseline(records: [rec("10.0.0.7"), rec("10.0.0.7")])
+        let diff = SnapshotDiff.compute(current: [host("10.0.0.7")], baseline: baseline)
+        XCTAssertEqual(diff.missingCount, 0)
+    }
 }
