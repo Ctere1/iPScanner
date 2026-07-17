@@ -33,13 +33,26 @@ final class MDNSDiscovery {
         ("_device-info._tcp", "Device Info")
     ]
 
+    static let resolveTimeoutMs = 3000
+
     private(set) var servicesByIP: [String: Set<ServiceRecord>] = [:]
     private var browsers: [NWBrowser] = []
     private var pendingConnections: [NWConnection] = []
+    /// Endpoints already resolved or currently being resolved. `browseResultsChangedHandler`
+    /// hands back the whole result set on every change, so without this each new device on the
+    /// network re-resolved every service already known — a connection storm that grew with the
+    /// square of the number of services, for the app's whole lifetime.
+    private var seenEndpoints: Set<EndpointKey> = []
     private let resolveQueue = DispatchQueue(
         label: "iPScanner.mdns.resolve",
         attributes: .concurrent
     )
+
+    private struct EndpointKey: Hashable {
+        let name: String
+        let type: String
+        let domain: String
+    }
 
     var isRunning: Bool { !browsers.isEmpty }
 
@@ -63,6 +76,7 @@ final class MDNSDiscovery {
         browsers.removeAll()
         for c in pendingConnections { c.cancel() }
         pendingConnections.removeAll()
+        seenEndpoints.removeAll()
     }
 
     func services(for ip: String) -> [ServiceRecord] {
@@ -87,6 +101,8 @@ final class MDNSDiscovery {
     private func handle(results: Set<NWBrowser.Result>, displayType: String) {
         for result in results {
             guard case .service(let name, let type, let domain, _) = result.endpoint else { continue }
+            let key = EndpointKey(name: name, type: type, domain: domain)
+            guard seenEndpoints.insert(key).inserted else { continue }
             resolveService(name: name, type: type, domain: domain, displayType: displayType)
         }
     }
@@ -95,14 +111,27 @@ final class MDNSDiscovery {
         let endpoint = NWEndpoint.service(name: name, type: type, domain: domain, interface: nil)
         let connection = NWConnection(to: endpoint, using: .tcp)
         pendingConnections.append(connection)
+        let key = EndpointKey(name: name, type: type, domain: domain)
+
+        // Without a timeout a connection to an advertised-but-unreachable service sits in
+        // `.waiting` forever: it never reaches a terminal state, so the handler below never runs,
+        // and the connection — which owns the handler that captures it — leaks along with its
+        // entry in `pendingConnections`.
+        let timeoutWork = DispatchWorkItem { connection.cancel() }
+        resolveQueue.asyncAfter(deadline: .now() + .milliseconds(Self.resolveTimeoutMs), execute: timeoutWork)
 
         connection.stateUpdateHandler = { [weak self] state in
             switch state {
             case .ready:
-                if let path = connection.currentPath,
-                   case .hostPort(let host, _) = path.remoteEndpoint,
-                   let ip = Self.ipv4String(from: host) {
-                    Task { @MainActor in
+                timeoutWork.cancel()
+                let resolved: String? = {
+                    guard let path = connection.currentPath,
+                          case .hostPort(let host, _) = path.remoteEndpoint else { return nil }
+                    return Self.ipv4String(from: host)
+                }()
+                connection.cancel()
+                Task { @MainActor in
+                    if let ip = resolved {
                         self?.add(
                             record: ServiceRecord(
                                 displayType: displayType,
@@ -111,12 +140,16 @@ final class MDNSDiscovery {
                                 ip: ip
                             )
                         )
-                        self?.dropConnection(connection)
+                    } else {
+                        // Nothing learned, so allow a later browse callback to retry this endpoint.
+                        self?.seenEndpoints.remove(key)
                     }
+                    self?.dropConnection(connection)
                 }
-                connection.cancel()
             case .failed, .cancelled:
+                timeoutWork.cancel()
                 Task { @MainActor in
+                    self?.seenEndpoints.remove(key)
                     self?.dropConnection(connection)
                 }
             default:
@@ -124,6 +157,29 @@ final class MDNSDiscovery {
             }
         }
         connection.start(queue: resolveQueue)
+    }
+
+    /// Best human-readable name Bonjour knows for `ip`, if any. Service instance names are what
+    /// the device chose to call itself ("Cemil MacBook Pro"), which is exactly what a scan wants
+    /// to show when reverse DNS has no PTR record.
+    func name(for ip: String) -> String? {
+        let records = services(for: ip)
+        guard !records.isEmpty else { return nil }
+        // Prefer the type most likely to carry the device's own name over a per-service label.
+        let preferred = ["_device-info._tcp", "_workstation._tcp", "_companion-link._tcp", "_smb._tcp"]
+        for type in preferred {
+            if let match = records.first(where: { $0.serviceType == type }) {
+                return Self.cleanName(match.name)
+            }
+        }
+        return Self.cleanName(records[0].name)
+    }
+
+    /// `_workstation._tcp` instances are advertised as "name [00:11:22:33:44:55]"; drop the suffix.
+    private static func cleanName(_ raw: String) -> String {
+        guard let bracket = raw.firstIndex(of: "[") else { return raw }
+        let trimmed = raw[..<bracket].trimmingCharacters(in: .whitespaces)
+        return trimmed.isEmpty ? raw : trimmed
     }
 
     private func add(record: ServiceRecord) {
