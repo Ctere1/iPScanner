@@ -5,7 +5,7 @@
     <a href="LICENSE"><img src="https://img.shields.io/github/license/Ctere1/iPScanner?color=green" alt="License"></a>
     <img src="https://img.shields.io/badge/macOS-14.4%2B-black?logo=apple" alt="macOS 14.4+">
     <img src="https://img.shields.io/badge/binary-universal-purple" alt="Universal binary">
-    <img src="https://img.shields.io/badge/tests-184-brightgreen" alt="184 tests">
+    <img src="https://img.shields.io/badge/tests-437-brightgreen" alt="437 tests">
     <a href="https://github.com/canberkys/iPScanner"><img src="https://img.shields.io/badge/fork%20of-canberkys%2FiPScanner-lightgrey?logo=github" alt="Fork of canberkys/iPScanner"></a>
   </p>
 </div>
@@ -27,8 +27,8 @@ Open-source macOS counterpart to Advanced IP Scanner. Native SwiftUI, zero third
 ## Screenshots
 
 <div align="center">
-  <img src="docs/screenshots/01-results.png" width="800" alt="iPScanner — scan results with the host inspector open">
-  <p><em>Scan results — table with vendors, ports, and labels; the right-side inspector shows the selected host's full detail and a live ping monitor.</em></p>
+  <img src="docs/screenshots/01-results.png" width="800" alt="iPScanner — scan results with a host's detail open">
+  <p><em>Scan results — table with vendors, ports, and labels; double-clicking a row opens its full detail and a live ping monitor.</em></p>
 </div>
 
 <div align="center">
@@ -141,7 +141,7 @@ open ~/Library/Developer/Xcode/DerivedData/iPScanner-*/Build/Products/Debug/iPSc
 xcodebuild test -project iPScanner.xcodeproj -scheme iPScanner -destination 'platform=macOS'
 ```
 
-184 tests, no network access required. They cover the CIDR/range and target-file parsers, the
+437 tests, no network access required. They cover the CIDR/range and target-file parsers, the
 oversized-range guard, ICMP echo build/parse (including truncated and hostile packets), NetBIOS
 wire format against a real captured Windows reply, OUI 3-tier vendor lookup, the subnet calculator,
 CSV / IP:Port / text-report escaping (including formula injection), snapshot encode/decode and diff,
@@ -212,9 +212,9 @@ workflow refreshes them from `standards-oui.ieee.org` on every tag push.
 </details>
 
 <details>
-<summary><strong>Inspector</strong> — auto-opens on selection, ping monitor, action grid</summary>
+<summary><strong>Host detail</strong> — double-click a row, ping monitor, action grid</summary>
 
-Selecting a single host opens the right-side panel automatically. The panel is resizable and its width is persisted.
+Double-click a row to open its detail sheet; single-click only selects. The sheet leaves the table exactly where it is.
 
 - Header — device-type icon, IP, vendor, classification
 - Inline label editor with `#tag` syntax (searchable, MAC-anchored, persisted)
@@ -234,7 +234,6 @@ Selecting a single host opens the right-side panel automatically. The panel is r
 - **Change detection / snapshot diff** — load a previous `.ipscan.json` as comparison baseline; per-row badges (`+` new, `~` changed, `−` missing) plus a summary popover listing missing hosts
 - **Permission/failure surfacing** — status-bar warnings hub (ARP table empty, banner fetch failures) with a click-through detail popover
 - **Search match highlighting** — query substrings highlighted in IP / Hostname / MAC / Vendor / Title / Label cells
-- **Resizable inspector** — drag the divider; width persisted
 
 </details>
 
@@ -264,11 +263,11 @@ Selecting a single host opens the right-side panel automatically. The panel is r
 <details>
 <summary><strong>UX</strong> — split view, app menus, appearance picker, status bar</summary>
 
-- macOS-native: `NavigationSplitView` (sidebar + detail + inspector), `ContentUnavailableView`, App-menu commands, custom About panel, GitHub Help menu
+- macOS-native: `NavigationSplitView` (sidebar + detail), `ContentUnavailableView`, App-menu commands, custom About panel, GitHub Help menu
 - **Appearance picker** in `View → Appearance` (System / Light / Dark)
 - **Live updates** — alive hosts stream into the table as they're discovered
 - **Status bar** — progress, alive count, filter match, elapsed time, warnings, diff summary
-- **Responsive toolbar** — collapses into an overflow menu as the window and inspector take space, rather than overlapping itself
+- **Responsive toolbar** — collapses into an overflow menu as the window narrows, rather than overlapping itself
 - Sandbox disabled (required for ICMP / ARP / socket access)
 
 </details>
@@ -319,7 +318,7 @@ sudo ln -s /Applications/iPScanner.app/Contents/MacOS/ipscanner /usr/local/bin/i
 - [x] Saved ranges with names + Rename
 - [x] Snapshot save/load (`.ipscan.json`)
 - [x] Per-host labels (MAC-anchored, `#tag` searchable)
-- [x] Live ping monitor in inspector
+- [x] Live ping monitor in host detail
 - [x] Service-name column for ports (22 → ssh, 9100 → printer, …)
 - [x] HTTP title / SSH banner enrichment
 - [x] OUI MA-L + MA-M + MA-S (sub-block accuracy)
@@ -337,7 +336,6 @@ sudo ln -s /Applications/iPScanner.app/Contents/MacOS/ipscanner /usr/local/bin/i
 - [x] Change detection / snapshot diff
 - [x] Permission/failure surfacing
 - [x] Search match highlighting
-- [x] Resizable inspector
 
 </details>
 
@@ -372,7 +370,7 @@ Moved iPScanner from a desktop tool to a usable operations tool.
 <details>
 <summary><strong>Deferred (P2)</strong> — open to demand, not on the active list</summary>
 
-- Multi-ping at scan time with packet-loss percentage (live inspector already covers the diagnostic case; 3× scan time is rarely worth it)
+- Multi-ping at scan time with packet-loss percentage (the live ping monitor already covers the diagnostic case; 3× scan time is rarely worth it)
 - Filtered-port detection (`open` / `closed` / `filtered` distinction; risk of mis-classification on TCP timeout)
 - XML export
 - Append-to-file export mode (snapshot diff is the cleaner historical model)

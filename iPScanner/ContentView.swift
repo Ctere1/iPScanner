@@ -375,22 +375,12 @@ struct ContentView: View {
         controller.hosts.first { $0.id == id }
     }
 
-    /// Explains where a Ports cell's value came from.
-    ///
-    /// The column is legitimately mixed under the Standard profile: a host that answered ICMP was
-    /// never port-probed and reads "—", while one found via the TCP fallback shows the handful of
-    /// ports discovery already tried. Without this the two look like the same column disagreeing
-    /// with itself.
-    /// Reverse DNS first, then the names the scan picked up elsewhere. Most LANs have no PTR
-    /// records, so without the fallbacks this column reads "—" for every host even when the device
-    /// is announcing its name over Bonjour.
     // MARK: - Toolbar
 
     @ViewBuilder
     private var toolbar: some View {
         // ViewThatFits falls back to the *last* child when none fit, so `.minimal` must be the
-        // smallest layout that is still usable: dragging the inspector out to its 460pt maximum
-        // leaves the table pane around 254pt, narrower than even `.tight` needs.
+        // smallest layout that is still usable — it is what a narrow window gets, not an error path.
         ViewThatFits(in: .horizontal) {
             toolbarRow(.full)
             toolbarRow(.compact)
