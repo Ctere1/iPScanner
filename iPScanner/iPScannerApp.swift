@@ -54,13 +54,16 @@ struct iPScannerApp: App {
                 }
             }
             CommandGroup(replacing: .help) {
+                // Both were hardcoded to upstream. This build's update check has always pointed at
+                // whatever iPScannerUpdateRepository names, so a fork's "Report an Issue…" opened a
+                // bug report against code its maintainer does not have.
                 Button("iPScanner on GitHub") {
-                    if let url = URL(string: "https://github.com/canberkys/iPScanner") {
+                    if let url = UpdateChecker.repositoryURL {
                         NSWorkspace.shared.open(url)
                     }
                 }
                 Button("Report an Issue…") {
-                    if let url = URL(string: "https://github.com/canberkys/iPScanner/issues/new") {
+                    if let url = UpdateChecker.newIssueURL {
                         NSWorkspace.shared.open(url)
                     }
                 }
@@ -146,23 +149,31 @@ struct iPScannerApp: App {
 
 @MainActor
 private func showCustomAboutPanel() {
-    let credits = NSMutableAttributedString()
+    // AppKit centres the name, version and copyright it draws itself, but `credits` is handed over
+    // as an attributed string and keeps whatever alignment it carries — which is left by default.
+    // So the one block this app supplies was the one block out of line with the panel around it.
+    let centred = NSMutableParagraphStyle()
+    centred.alignment = .center
+
     let bodyAttrs: [NSAttributedString.Key: Any] = [
         .font: NSFont.systemFont(ofSize: 11),
-        .foregroundColor: NSColor.labelColor
+        .foregroundColor: NSColor.labelColor,
+        .paragraphStyle: centred
     ]
     let linkAttrs: [NSAttributedString.Key: Any] = [
         .font: NSFont.systemFont(ofSize: 11),
         .foregroundColor: NSColor.linkColor,
-        .link: URL(string: "https://github.com/canberkys/iPScanner") as Any
+        .link: UpdateChecker.repositoryURL as Any,
+        .paragraphStyle: centred
     ]
 
+    let credits = NSMutableAttributedString()
     credits.append(NSAttributedString(
-        string: "A native macOS network scanner.\nMIT License.\n\n",
+        string: "A native macOS network scanner.\n\n",
         attributes: bodyAttrs
     ))
     credits.append(NSAttributedString(
-        string: "github.com/canberkys/iPScanner",
+        string: "github.com/\(UpdateChecker.repository)",
         attributes: linkAttrs
     ))
     credits.append(NSAttributedString(
@@ -170,12 +181,16 @@ private func showCustomAboutPanel() {
         attributes: bodyAttrs
     ))
 
-    NSApp.orderFrontStandardAboutPanel(options: [
-        .applicationName: "iPScanner",
-        .applicationVersion: "1.2.0",
-        .credits: credits,
-        .init(rawValue: "Copyright"): "© 2026 Canberk Kılıçarslan"
-    ])
+    var options: [NSApplication.AboutPanelOptionKey: Any] = [.credits: credits]
+    options[.applicationVersion] = UpdateChecker.currentVersion()
+    if let name = Bundle.main.object(forInfoDictionaryKey: "CFBundleName") as? String {
+        options[.applicationName] = name
+    }
+    if let copyright = Bundle.main.object(forInfoDictionaryKey: "NSHumanReadableCopyright") as? String {
+        options[.init(rawValue: "Copyright")] = copyright
+    }
+
+    NSApp.orderFrontStandardAboutPanel(options: options)
     NSApp.activate(ignoringOtherApps: true)
 }
 

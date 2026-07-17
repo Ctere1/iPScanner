@@ -46,6 +46,22 @@ final class UpdateChecker {
         URL(string: "https://api.github.com/repos/\(repository)/releases/latest")
     }
 
+    /// The repository's page and issue form.
+    ///
+    /// Here rather than at the menu items that open them, because this is the type that knows which
+    /// repository this build belongs to and has already validated the string going into the URL.
+    /// They were hardcoded to upstream while the update check pointed at the fork — so "Report an
+    /// Issue…" filed this fork's bugs on someone else's tracker, and "iPScanner on GitHub" offered
+    /// the source of a different app. The reasoning in `defaultRepository` above covers all three;
+    /// only the update check was actually following it.
+    nonisolated static var repositoryURL: URL? {
+        URL(string: "https://github.com/\(repository)")
+    }
+
+    nonisolated static var newIssueURL: URL? {
+        URL(string: "https://github.com/\(repository)/issues/new")
+    }
+
     static let autoCheckInterval: TimeInterval = 24 * 60 * 60  // 24 hours
 
     nonisolated static func currentVersion() -> String {
