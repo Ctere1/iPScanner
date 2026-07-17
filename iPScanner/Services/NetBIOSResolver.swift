@@ -152,14 +152,3 @@ enum NetBIOSResolver {
     }
 }
 
-private final class ResumeOnce: @unchecked Sendable {
-    private var fired = false
-    private let lock = NSLock()
-    func fire(_ block: () -> Void) {
-        lock.lock()
-        defer { lock.unlock() }
-        guard !fired else { return }
-        fired = true
-        block()
-    }
-}
