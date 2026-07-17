@@ -25,6 +25,24 @@ struct ContentView: View {
     @AppStorage("iPScanner.update.skippedVersion") private var updateSkippedVersion: String = ""
     @FocusState private var searchFieldFocused: Bool
 
+    /// Saving and copying the table. The file I/O used to live in this view.
+    private var exporter: ExportCoordinator { ExportCoordinator(controller: controller) }
+
+    /// Reading and writing .ipscan.json files. The panels and decoding used to live in this view.
+    private var snapshots: SnapshotFileCoordinator { SnapshotFileCoordinator(controller: controller) }
+
+    private var rttTtlHeader: String {
+        HostCellFormatter.rttTtlHeader(showRTT: columns.isVisible(.rtt), showTTL: columns.isVisible(.ttl))
+    }
+
+    private func rttTtlCell(_ host: Host) -> String {
+        HostCellFormatter.rttTtlCell(host, showRTT: columns.isVisible(.rtt), showTTL: columns.isVisible(.ttl))
+    }
+
+    private func ttlHint(for ttl: Int?) -> String {
+        HostCellFormatter.ttlHint(for: ttl)
+    }
+
     enum ManualCheckOutcome: Identifiable {
         case upToDate
         case failed(String)
@@ -192,10 +210,10 @@ struct ContentView: View {
             if !controller.isScanning { controller.start() }
         }
         .onReceive(NotificationCenter.default.publisher(for: .iPScannerCommandExportCSV)) { _ in
-            if !controller.hosts.isEmpty { saveCSV() }
+            if !controller.hosts.isEmpty { exporter.save(.csv) }
         }
         .onReceive(NotificationCenter.default.publisher(for: .iPScannerCommandExportJSON)) { _ in
-            if !controller.hosts.isEmpty { saveJSON() }
+            if !controller.hosts.isEmpty { exporter.save(.json) }
         }
         .onReceive(NotificationCenter.default.publisher(for: .iPScannerCommandOpenSnapshot)) { _ in
             openSnapshot()
@@ -213,7 +231,7 @@ struct ContentView: View {
             searchFieldFocused = true
         }
         .onReceive(NotificationCenter.default.publisher(for: .iPScannerCommandCopyIPs)) { _ in
-            copySelectedIPs()
+            exporter.copySelectedIPs()
         }
     }
 
@@ -447,26 +465,11 @@ struct ContentView: View {
                 .disabled(controller.selection.isEmpty || controller.portScanInProgress || controller.isScanning)
 
                 Menu("Export") {
-                    Button("Save as CSV…") { saveCSV() }
-                    Button("Save as JSON…") { saveJSON() }
-                    Button("Save as IP:Port List…") { saveIPPort() }
-                    Button("Save as Text Report…") { saveTextReport() }
-                    Divider()
-                    Button("Copy to Clipboard (CSV)") { copyCSV() }
-                    Button("Copy to Clipboard (JSON)") { copyJSON() }
-                    Button("Copy to Clipboard (IP:Port)") { copyIPPort() }
-                    Button("Copy to Clipboard (Text Report)") { copyTextReport() }
+                    ExportMenu(exporter: exporter)
                 }
 
                 Divider()
-                Toggle("Has open ports", isOn: $controller.filterHasOpenPorts)
-                Toggle("Has label", isOn: $controller.filterHasLabel)
-                Toggle("Has vendor", isOn: $controller.filterHasVendor)
-                Toggle("Identified device type", isOn: $controller.filterIdentifiedDevice)
-                Toggle("Dead hosts", isOn: $controller.showDeadHosts)
-                if controller.hasActiveScopeFilters {
-                    Button("Clear filters") { controller.clearScopeFilters() }
-                }
+                FilterMenu(controller: controller, includeDeadHosts: true)
 
                 Menu("Columns") { ColumnsMenu(columns: columns) }
             }
@@ -709,15 +712,7 @@ struct ContentView: View {
 
             if !controller.hosts.isEmpty {
                 Menu {
-                    Button("Save as CSV…") { saveCSV() }
-                    Button("Save as JSON…") { saveJSON() }
-                    Button("Save as IP:Port List…") { saveIPPort() }
-                    Button("Save as Text Report…") { saveTextReport() }
-                    Divider()
-                    Button("Copy to Clipboard (CSV)") { copyCSV() }
-                    Button("Copy to Clipboard (JSON)") { copyJSON() }
-                    Button("Copy to Clipboard (IP:Port)") { copyIPPort() }
-                    Button("Copy to Clipboard (Text Report)") { copyTextReport() }
+                    ExportMenu(exporter: exporter)
                 } label: {
                     Label("Export", systemImage: "square.and.arrow.up")
                 }
@@ -737,14 +732,7 @@ struct ContentView: View {
                     .focused($searchFieldFocused)
 
                 Menu {
-                    Toggle("Has open ports", isOn: $controller.filterHasOpenPorts)
-                    Toggle("Has label", isOn: $controller.filterHasLabel)
-                    Toggle("Has vendor", isOn: $controller.filterHasVendor)
-                    Toggle("Identified device type", isOn: $controller.filterIdentifiedDevice)
-                    if controller.hasActiveScopeFilters {
-                        Divider()
-                        Button("Clear filters") { controller.clearScopeFilters() }
-                    }
+                    FilterMenu(controller: controller)
                 } label: {
                     Image(systemName: controller.hasActiveScopeFilters
                           ? "line.3.horizontal.decrease.circle.fill"
@@ -880,11 +868,10 @@ struct ContentView: View {
     }
 
     private func openTargetFile() {
-        let panel = NSOpenPanel()
-        panel.allowsMultipleSelection = false
-        panel.allowedContentTypes = [.plainText, .commaSeparatedText, .text]
-        panel.message = "Select a .txt or .csv file containing IPs, CIDRs, or ranges (one per line; commas allowed)."
-        guard panel.runModal() == .OK, let url = panel.url else { return }
+        guard let url = FilePanels.open(
+            contentTypes: [.plainText, .commaSeparatedText, .text],
+            message: "Select a .txt or .csv file containing IPs, CIDRs, or ranges (one per line; commas allowed)."
+        ) else { return }
         do {
             let summary = try controller.loadImportedFile(url: url)
             if summary.invalidLineCount > 0 {
@@ -1242,11 +1229,9 @@ struct ContentView: View {
                 .frame(width: 320)
 
             Picker("Preset", selection: portPresetBinding) {
-                Text("Common").tag("common")
-                Text("Web").tag("web")
-                Text("Remote").tag("remote")
-                Text("1-1024").tag("range")
-                Text("Custom").tag("custom")
+                ForEach(PortPreset.allCases) { preset in
+                    Text(preset.title).tag(preset)
+                }
             }
             .pickerStyle(.segmented)
             .labelsHidden()
@@ -1288,206 +1273,21 @@ struct ContentView: View {
         .frame(width: 360)
     }
 
-    private var portPresetBinding: Binding<String> {
+    private var portPresetBinding: Binding<PortPreset> {
         Binding(
-            get: {
-                switch portsInput {
-                case PortScanner.defaultPortsInput: return "common"
-                case "80, 443, 8080, 8443": return "web"
-                case "22, 3389, 5900": return "remote"
-                case "1-1024": return "range"
-                default: return "custom"
-                }
-            },
-            set: { newValue in
-                switch newValue {
-                case "common": portsInput = PortScanner.defaultPortsInput
-                case "web": portsInput = "80, 443, 8080, 8443"
-                case "remote": portsInput = "22, 3389, 5900"
-                case "range": portsInput = "1-1024"
-                default: break
-                }
-            }
+            get: { PortPreset.matching(portsInput) },
+            // .custom has no list of its own — picking it leaves whatever is typed alone.
+            set: { if let input = $0.portsInput { portsInput = input } }
         )
-    }
-
-    // MARK: - Export
-
-    private func currentRows() -> [ExportService.Row] {
-        ExportService.rows(from: controller.filteredHosts) { controller.label(for: $0) }
-    }
-
-    /// Runs a save panel and writes `data`, surfacing failures. A silent `try?` here made a
-    /// read-only volume, a sandbox denial, or a full disk look exactly like a successful save.
-    private func save(_ data: Data, contentType: UTType, fileName: String) {
-        let panel = NSSavePanel()
-        panel.allowedContentTypes = [contentType]
-        panel.nameFieldStringValue = fileName
-        panel.canCreateDirectories = true
-        guard panel.runModal() == .OK, let url = panel.url else { return }
-        do {
-            try data.write(to: url)
-        } catch {
-            controller.report(title: "Save failed", message: "Could not save \(url.lastPathComponent).\n\n\(error.localizedDescription)")
-        }
-    }
-
-    private func saveCSV() {
-        let csv = ExportService.csv(rows: currentRows())
-        save(Data(csv.utf8), contentType: .commaSeparatedText, fileName: ExportService.defaultFileName(ext: "csv"))
-    }
-
-    private func saveJSON() {
-        guard let data = encodedJSON() else { return }
-        save(data, contentType: .json, fileName: ExportService.defaultFileName(ext: "json"))
-    }
-
-    private func copyCSV() {
-        HostActions.copy(ExportService.csv(rows: currentRows()))
-    }
-
-    private func copyJSON() {
-        guard let data = encodedJSON(), let str = String(data: data, encoding: .utf8) else { return }
-        HostActions.copy(str)
-    }
-
-    private func encodedJSON() -> Data? {
-        do {
-            return try ExportService.json(rows: currentRows())
-        } catch {
-            controller.report(title: "Export failed", message: "Could not encode JSON.\n\n\(error.localizedDescription)")
-            return nil
-        }
-    }
-
-    private func saveIPPort() {
-        let text = ExportService.ipPortList(rows: currentRows())
-        save(Data(text.utf8), contentType: .plainText, fileName: ExportService.defaultFileName(ext: "txt"))
-    }
-
-    private func copyIPPort() {
-        HostActions.copy(ExportService.ipPortList(rows: currentRows()))
-    }
-
-    private func saveTextReport() {
-        save(
-            Data(textReportString().utf8),
-            contentType: .plainText,
-            fileName: ExportService.defaultFileName(ext: "txt")
-        )
-    }
-
-    private func copyTextReport() {
-        HostActions.copy(textReportString())
-    }
-
-    private func textReportString() -> String {
-        let rangeLabel: String
-        if let imported = controller.importedTargets {
-            rangeLabel = "Imported list: \(imported.url.lastPathComponent) (\(imported.targets.count) targets)"
-        } else {
-            rangeLabel = controller.rangeInput
-        }
-        let scannedTotal: Int
-        switch controller.state {
-        case .scanning(_, let total): scannedTotal = total
-        case .done(_, let total): scannedTotal = total
-        case .idle: scannedTotal = controller.hosts.count
-        }
-        return ExportService.textReport(
-            rows: currentRows(),
-            rangeInput: rangeLabel,
-            scannedTotal: scannedTotal,
-            aliveCount: controller.aliveCount
-        )
-    }
-
-    private var rttTtlHeader: String {
-        switch (columns.isVisible(.rtt), columns.isVisible(.ttl)) {
-        case (true, true): "RTT / TTL"
-        case (true, false): "RTT"
-        case (false, true): "TTL"
-        case (false, false): ""
-        }
-    }
-
-    private func rttTtlCell(_ host: Host) -> String {
-        var parts: [String] = []
-        if columns.isVisible(.rtt) {
-            parts.append(host.rttMs.map { String(format: "%.1f ms", $0) } ?? "—")
-        }
-        if columns.isVisible(.ttl) {
-            parts.append(host.ttl.map { "ttl \($0)" } ?? "—")
-        }
-        return parts.joined(separator: " · ")
-    }
-
-    /// Rough heuristic translating an ICMP TTL into a probable origin OS.
-    /// Real values vary; this is a hint only.
-    private func ttlHint(for ttl: Int?) -> String {
-        guard let ttl else { return "" }
-        if ttl >= 250 { return "TTL \(ttl) — likely Cisco / network device" }
-        if ttl >= 120 { return "TTL \(ttl) — likely Windows" }
-        if ttl >= 60  { return "TTL \(ttl) — likely Linux / macOS / BSD" }
-        return "TTL \(ttl)"
-    }
-
-    // MARK: - Selection helpers
-
-    private func copySelectedIPs() {
-        // filteredHosts, not hosts: copy what is selected *and* visible, which is what the user
-        // believes they picked.
-        let ips = controller.filteredHosts
-            .filter { controller.selection.contains($0.id) }
-            .map(\.ip)
-        guard !ips.isEmpty else { return }
-        HostActions.copy(ips.joined(separator: "\n"))
     }
 
     // MARK: - Snapshot save / load
 
-    private func saveSnapshot() {
-        let snapshot = controller.makeSnapshot()
-        let data: Data
-        do {
-            data = try SnapshotIO.encode(snapshot)
-        } catch {
-            controller.report(title: "Save failed", message: "Could not encode the scan file.\n\n\(error.localizedDescription)")
-            return
-        }
-        save(data, contentType: .json, fileName: SnapshotIO.defaultFileName())
-    }
+    private func saveSnapshot() { snapshots.save() }
 
-    private func openSnapshot() {
-        let panel = NSOpenPanel()
-        panel.allowedContentTypes = [.json]
-        panel.allowsMultipleSelection = false
-        if panel.runModal() == .OK, let url = panel.url {
-            do {
-                let data = try Data(contentsOf: url)
-                let snapshot = try SnapshotIO.decode(data)
-                controller.applySnapshot(snapshot)
-            } catch {
-                controller.report(title: "Could not open scan file", message: error.localizedDescription)
-            }
-        }
-    }
+    private func openSnapshot() { snapshots.open() }
 
-    private func openComparisonBaseline() {
-        let panel = NSOpenPanel()
-        panel.allowedContentTypes = [.json]
-        panel.allowsMultipleSelection = false
-        panel.message = "Pick a previous scan to compare against the current results."
-        if panel.runModal() == .OK, let url = panel.url {
-            do {
-                let data = try Data(contentsOf: url)
-                let snapshot = try SnapshotIO.decode(data)
-                controller.loadComparisonBaseline(snapshot)
-            } catch {
-                controller.report(title: "Could not open comparison file", message: error.localizedDescription)
-            }
-        }
-    }
+    private func openComparisonBaseline() { snapshots.openComparisonBaseline() }
 
     private struct PortScanEstimate {
         let hosts: Int
