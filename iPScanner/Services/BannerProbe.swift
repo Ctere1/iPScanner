@@ -86,10 +86,16 @@ enum BannerProbe {
         return await withCheckedContinuation { (continuation: CheckedContinuation<String?, Never>) in
             let state = ReadState(connection: connection, continuation: continuation)
 
+            // Cancelled on every terminal path, as in NetBIOSResolver: an uncancelled asyncAfter
+            // block retains the connection and continuation for the full timeout window even after
+            // the banner has already arrived.
+            let timeoutWork = DispatchWorkItem { state.finish(nil) }
+
             connection.stateUpdateHandler = { newState in
                 switch newState {
                 case .ready:
                     connection.receive(minimumIncompleteLength: 1, maximumLength: 256) { data, _, _, _ in
+                        timeoutWork.cancel()
                         guard let data, !data.isEmpty,
                               let line = String(data: data, encoding: .utf8) else {
                             state.finish(nil)
@@ -102,15 +108,14 @@ enum BannerProbe {
                         state.finish(firstLine?.trimmingCharacters(in: .whitespacesAndNewlines))
                     }
                 case .failed, .cancelled:
+                    timeoutWork.cancel()
                     state.finish(nil)
                 default:
                     break
                 }
             }
 
-            queue.asyncAfter(deadline: .now() + .milliseconds(timeoutMs)) {
-                state.finish(nil)
-            }
+            queue.asyncAfter(deadline: .now() + .milliseconds(timeoutMs), execute: timeoutWork)
 
             connection.start(queue: queue)
         }

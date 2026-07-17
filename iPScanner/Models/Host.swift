@@ -1,6 +1,9 @@
 import Foundation
 
-struct Host: Identifiable, Hashable {
+/// Sendable is declared here rather than retroactively: every stored property is a value type, so
+/// the compiler verifies it, and adding a reference-typed field will be flagged instead of silently
+/// accepted the way an `@unchecked` conformance would.
+struct Host: Identifiable, Hashable, Sendable {
     enum Status: Hashable {
         case scanning
         case alive
@@ -8,7 +11,10 @@ struct Host: Identifiable, Hashable {
     }
 
     let id: UUID
-    var ip: String
+    let ip: String
+    /// Stored, not computed: this is the default sort key, and re-parsing `ip` on every comparison
+    /// made sorting the table O(n log n) string splits. `ip` is immutable, so it cannot drift.
+    let ipNumeric: UInt32
     var hostname: String?
     var mac: String?
     var vendor: String?
@@ -36,6 +42,7 @@ struct Host: Identifiable, Hashable {
     ) {
         self.id = id
         self.ip = ip
+        self.ipNumeric = IPv4.uint32(from: ip) ?? 0
         self.hostname = hostname
         self.mac = mac
         self.vendor = vendor
@@ -47,6 +54,4 @@ struct Host: Identifiable, Hashable {
         self.serviceTitle = serviceTitle
         self.status = status
     }
-
-    var ipNumeric: UInt32 { IPv4.uint32(from: ip) ?? 0 }
 }

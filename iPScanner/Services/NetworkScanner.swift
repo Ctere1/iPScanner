@@ -160,7 +160,10 @@ struct NetworkScanner: NetworkScanning {
                 process.arguments = ["-c", "1", "-W", String(pingTimeoutMs), ip]
                 let stdout = Pipe()
                 process.standardOutput = stdout
-                process.standardError = Pipe()
+                // An attached-but-undrained pipe deadlocks the child once it fills the buffer:
+                // stdout never closes, readDataToEndOfFile never returns, and the continuation is
+                // never resumed. Nothing reads stderr, so discard it at the kernel instead.
+                process.standardError = FileHandle.nullDevice
 
                 do {
                     try process.run()

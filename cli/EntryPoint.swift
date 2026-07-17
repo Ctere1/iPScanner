@@ -196,12 +196,19 @@ struct IPScannerCLI {
                 let relevant = host.openPorts.filter { [80, 443, 22].contains($0) }
                 return relevant.isEmpty ? nil : (host.ip, relevant)
             }
+            // Windowed like the port phase above; an unbounded group opened a connection to every
+            // banner target at once.
             await withTaskGroup(of: (String, String?).self) { group in
-                for (ip, openPorts) in bannerTargets {
+                var iter = bannerTargets.makeIterator()
+                for _ in 0..<min(concurrency, bannerTargets.count) {
+                    guard let (ip, openPorts) = iter.next() else { break }
                     group.addTask { (ip, await BannerProbe.fetch(ip, openPorts: openPorts)) }
                 }
                 while let (ip, title) = await group.next() {
                     if let title { hosts[ip]?.serviceTitle = title }
+                    if let (nextIP, nextPorts) = iter.next() {
+                        group.addTask { (nextIP, await BannerProbe.fetch(nextIP, openPorts: nextPorts)) }
+                    }
                 }
             }
         }

@@ -10,8 +10,6 @@ struct ContentView: View {
     @State private var portError: String?
     @State private var fetchBanners = true
     @State private var renamingRange: SavedRange?
-    @State private var showingWarnings = false
-    @State private var showingDiff = false
     @State private var importAlert: ImportAlert?
     @State private var showingSubnetCalc = false
     @State private var subnetCalcInput = ""
@@ -112,7 +110,7 @@ struct ContentView: View {
                     Divider()
                     content
                     Divider()
-                    statusBar
+                    StatusBar(controller: controller)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
 
@@ -843,13 +841,7 @@ struct ContentView: View {
         let hosts = ids.compactMap { host(forID: $0) }
         let wakeable = hosts.filter { $0.mac != nil }.count
         Button("Refresh (\(hosts.count) hosts)", systemImage: "arrow.clockwise") {
-            Task {
-                await withTaskGroup(of: Void.self) { group in
-                    for h in hosts {
-                        group.addTask { await controller.refreshHost(h.id) }
-                    }
-                }
-            }
+            Task { await controller.refreshHosts(ids) }
         }
         Button("Port Scan… (\(hosts.count) hosts)", systemImage: "network.badge.shield.half.filled") {
             portError = nil
@@ -990,26 +982,29 @@ struct ContentView: View {
         ExportService.rows(from: controller.filteredHosts) { controller.label(for: $0) }
     }
 
-    private func saveCSV() {
-        let csv = ExportService.csv(rows: currentRows())
+    /// Runs a save panel and writes `data`, surfacing failures. A silent `try?` here made a
+    /// read-only volume, a sandbox denial, or a full disk look exactly like a successful save.
+    private func save(_ data: Data, contentType: UTType, fileName: String) {
         let panel = NSSavePanel()
-        panel.allowedContentTypes = [.commaSeparatedText]
-        panel.nameFieldStringValue = ExportService.defaultFileName(ext: "csv")
+        panel.allowedContentTypes = [contentType]
+        panel.nameFieldStringValue = fileName
         panel.canCreateDirectories = true
-        if panel.runModal() == .OK, let url = panel.url {
-            try? csv.data(using: .utf8)?.write(to: url)
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        do {
+            try data.write(to: url)
+        } catch {
+            controller.reportError("Could not save \(url.lastPathComponent): \(error.localizedDescription)")
         }
     }
 
+    private func saveCSV() {
+        let csv = ExportService.csv(rows: currentRows())
+        save(Data(csv.utf8), contentType: .commaSeparatedText, fileName: ExportService.defaultFileName(ext: "csv"))
+    }
+
     private func saveJSON() {
-        guard let data = try? ExportService.json(rows: currentRows()) else { return }
-        let panel = NSSavePanel()
-        panel.allowedContentTypes = [.json]
-        panel.nameFieldStringValue = ExportService.defaultFileName(ext: "json")
-        panel.canCreateDirectories = true
-        if panel.runModal() == .OK, let url = panel.url {
-            try? data.write(to: url)
-        }
+        guard let data = encodedJSON() else { return }
+        save(data, contentType: .json, fileName: ExportService.defaultFileName(ext: "json"))
     }
 
     private func copyCSV() {
@@ -1017,20 +1012,22 @@ struct ContentView: View {
     }
 
     private func copyJSON() {
-        guard let data = try? ExportService.json(rows: currentRows()),
-              let str = String(data: data, encoding: .utf8) else { return }
+        guard let data = encodedJSON(), let str = String(data: data, encoding: .utf8) else { return }
         HostActions.copy(str)
+    }
+
+    private func encodedJSON() -> Data? {
+        do {
+            return try ExportService.json(rows: currentRows())
+        } catch {
+            controller.reportError("Could not encode JSON: \(error.localizedDescription)")
+            return nil
+        }
     }
 
     private func saveIPPort() {
         let text = ExportService.ipPortList(rows: currentRows())
-        let panel = NSSavePanel()
-        panel.allowedContentTypes = [.plainText]
-        panel.nameFieldStringValue = ExportService.defaultFileName(ext: "txt")
-        panel.canCreateDirectories = true
-        if panel.runModal() == .OK, let url = panel.url {
-            try? text.data(using: .utf8)?.write(to: url)
-        }
+        save(Data(text.utf8), contentType: .plainText, fileName: ExportService.defaultFileName(ext: "txt"))
     }
 
     private func copyIPPort() {
@@ -1038,14 +1035,11 @@ struct ContentView: View {
     }
 
     private func saveTextReport() {
-        let text = textReportString()
-        let panel = NSSavePanel()
-        panel.allowedContentTypes = [.plainText]
-        panel.nameFieldStringValue = ExportService.defaultFileName(ext: "txt")
-        panel.canCreateDirectories = true
-        if panel.runModal() == .OK, let url = panel.url {
-            try? text.data(using: .utf8)?.write(to: url)
-        }
+        save(
+            Data(textReportString().utf8),
+            contentType: .plainText,
+            fileName: ExportService.defaultFileName(ext: "txt")
+        )
     }
 
     private func copyTextReport() {
@@ -1117,14 +1111,14 @@ struct ContentView: View {
 
     private func saveSnapshot() {
         let snapshot = controller.makeSnapshot()
-        guard let data = try? SnapshotIO.encode(snapshot) else { return }
-        let panel = NSSavePanel()
-        panel.allowedContentTypes = [.json]
-        panel.nameFieldStringValue = SnapshotIO.defaultFileName()
-        panel.canCreateDirectories = true
-        if panel.runModal() == .OK, let url = panel.url {
-            try? data.write(to: url)
+        let data: Data
+        do {
+            data = try SnapshotIO.encode(snapshot)
+        } catch {
+            controller.reportError("Could not encode scan file: \(error.localizedDescription)")
+            return
         }
+        save(data, contentType: .json, fileName: SnapshotIO.defaultFileName())
     }
 
     private func openSnapshot() {
@@ -1200,6 +1194,17 @@ struct ContentView: View {
         showingPortScan = false
         controller.runPortScan(ports: ports, fetchBanners: fetchBanners)
     }
+
+    // MARK: - Status bar
+}
+
+/// Split out of `ContentView` deliberately: it reads `controller.elapsed`, which ticks while a scan
+/// runs. As a computed property of ContentView that read made every tick invalidate the whole body,
+/// re-filtering and re-sorting the entire host table. As its own View, only this bar redraws.
+private struct StatusBar: View {
+    let controller: ScanController
+    @State private var showingWarnings = false
+    @State private var showingDiff = false
 
     // MARK: - Warnings popover
 
@@ -1288,10 +1293,7 @@ struct ContentView: View {
         .frame(width: 380)
     }
 
-    // MARK: - Status bar
-
-    @ViewBuilder
-    private var statusBar: some View {
+    var body: some View {
         HStack(spacing: 16) {
             switch controller.state {
             case .idle:

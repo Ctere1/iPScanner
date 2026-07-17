@@ -32,5 +32,3 @@ enum ScanWarning: Sendable, Hashable {
         }
     }
 }
-
-extension Host: @unchecked Sendable {}

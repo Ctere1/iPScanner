@@ -65,11 +65,19 @@ enum PortScanner {
         return await withCheckedContinuation { (continuation: CheckedContinuation<Bool, Never>) in
             let state = ProbeState(connection: connection, continuation: continuation)
 
+            // Cancelled on every terminal path, as in NetBIOSResolver. An uncancelled asyncAfter
+            // block keeps the connection and continuation alive for the whole timeout window even
+            // when the port answers in 2ms — across a wide scan that is a large rolling set of
+            // dead-but-retained connections.
+            let timeoutWork = DispatchWorkItem { state.finish(false) }
+
             connection.stateUpdateHandler = { newState in
                 switch newState {
                 case .ready:
+                    timeoutWork.cancel()
                     state.finish(true)
                 case .failed, .cancelled:
+                    timeoutWork.cancel()
                     state.finish(false)
                 case .setup, .preparing, .waiting:
                     break
@@ -78,9 +86,7 @@ enum PortScanner {
                 }
             }
 
-            queue.asyncAfter(deadline: .now() + .milliseconds(timeoutMs)) {
-                state.finish(false)
-            }
+            queue.asyncAfter(deadline: .now() + .milliseconds(timeoutMs), execute: timeoutWork)
 
             connection.start(queue: queue)
         }
