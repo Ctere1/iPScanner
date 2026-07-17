@@ -83,11 +83,24 @@ enum NetBIOSResolver {
         guard data.count >= 12 else { return nil }
 
         let bytes = Array(data)
+
+        // QDCOUNT and ANCOUNT drive the layout; they are not assumptions we get to make.
+        // Windows answers an NBSTAT query with QDCOUNT = 0 — it does not echo the question back.
+        // Skipping a question section unconditionally consumed the *answer's* name instead, threw
+        // the offset off by a whole record, and made every parse fail: NetBIOS names never
+        // resolved on Windows hosts, which is most of the hosts that have one.
+        let questionCount = Int(bytes[4]) << 8 | Int(bytes[5])
+        let answerCount = Int(bytes[6]) << 8 | Int(bytes[7])
+        guard answerCount > 0 else { return nil }
+
         var i = 12  // skip the 12-byte header
 
-        // Skip the echoed question section: name (length-prefixed) + QTYPE + QCLASS
-        guard skipName(in: bytes, from: &i) else { return nil }
-        i += 4
+        // Echoed question section, when the responder includes one: name + QTYPE + QCLASS.
+        for _ in 0..<questionCount {
+            guard skipName(in: bytes, from: &i) else { return nil }
+            guard i + 4 <= bytes.count else { return nil }
+            i += 4
+        }
 
         // Answer record begins. Skip its name.
         guard skipName(in: bytes, from: &i) else { return nil }
