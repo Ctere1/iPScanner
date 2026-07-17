@@ -2,11 +2,11 @@
   <img src="assets/icon-with-text.png" width="220" alt="iPScanner">
   <h3><em>See every device on your network.</em></h3>
   <p>
-    <a href="https://canberk.me/ipscanner/"><img src="https://img.shields.io/badge/website-canberk.me%2Fipscanner-orange" alt="Website"></a>
-    <a href="https://github.com/canberkys/iPScanner/releases/latest"><img src="https://img.shields.io/github/v/release/canberkys/iPScanner?label=download&color=blue" alt="Latest release"></a>
-    <a href="LICENSE"><img src="https://img.shields.io/github/license/canberkys/iPScanner?color=green" alt="License"></a>
+    <a href="LICENSE"><img src="https://img.shields.io/github/license/Ctere1/iPScanner?color=green" alt="License"></a>
     <img src="https://img.shields.io/badge/macOS-14.4%2B-black?logo=apple" alt="macOS 14.4+">
     <img src="https://img.shields.io/badge/binary-universal-purple" alt="Universal binary">
+    <img src="https://img.shields.io/badge/tests-184-brightgreen" alt="184 tests">
+    <a href="https://github.com/canberkys/iPScanner"><img src="https://img.shields.io/badge/fork%20of-canberkys%2FiPScanner-lightgrey?logo=github" alt="Fork of canberkys/iPScanner"></a>
   </p>
 </div>
 
@@ -14,7 +14,15 @@
 
 # iPScanner — A native macOS network scanner
 
-Open-source macOS counterpart to Advanced IP Scanner. Built with native SwiftUI, zero third-party dependencies, universal binary (Apple Silicon + Intel).
+Open-source macOS counterpart to Advanced IP Scanner. Native SwiftUI, zero third-party dependencies, universal binary (Apple Silicon + Intel).
+
+> **This is a fork of [canberkys/iPScanner](https://github.com/canberkys/iPScanner)**, maintained at
+> [Ctere1/iPScanner](https://github.com/Ctere1/iPScanner). It tracks upstream's features and adds a
+> round of correctness, security and performance fixes on top — see
+> [What's different in this fork](#whats-different-in-this-fork).
+>
+> Upstream is the original project and deserves the credit for the app itself. If you want the
+> author's own builds, get them from [upstream's releases](https://github.com/canberkys/iPScanner/releases/latest).
 
 ## Screenshots
 
@@ -30,32 +38,146 @@ Open-source macOS counterpart to Advanced IP Scanner. Built with native SwiftUI,
 
 ---
 
+## What's different in this fork
+
+Upstream at `v1.2.0` is the baseline. Everything below is fixed here and not upstream. Each item is
+one commit; run `git log --oneline upstream/main..main` to see them.
+
+### Fixes you can feel
+
+| | Upstream behaviour | Here |
+|---|---|---|
+| **Scan speed** | one `/sbin/ping` process per host, each blocking a thread | ICMP socket, no subprocess — **19.0s → 6.1s** on a /24 |
+| **Hostnames** | only reverse DNS, so blank on any LAN without PTR records | falls back to **mDNS**, then **NetBIOS**, and shows which source it used |
+| **NetBIOS names** | never resolved against Windows hosts (parser bug) | works — `DESKTOP-…` / workgroup now populate |
+| **Toolbar** | controls overlapped and drew on top of each other on a narrow window | collapses into an overflow menu instead |
+| **`0.0.0.0/0`** | expanded 4.3 billion addresses (~34 GB) and wedged the app | rejected in ~9 ms |
+| **Deep scan banners** | silently fetched zero banners, every time | fetches them |
+
+### Security
+
+- **CSV formula injection** — a scanned host's own PTR record could carry `=cmd|'/c calc'!A1`,
+  which reached the export unquoted and executed when the operator opened it in Excel. Now
+  neutralized.
+- **App Transport Security** — upstream disables ATS process-wide (`NSAllowsArbitraryLoads`), which
+  also drops the TLS floor for the update check. Scoped to `NSAllowsLocalNetworking`, which is all
+  the banner probe actually needs.
+- **Update URL validation** — the release URL from the API was opened without checking scheme or
+  host; a forged response could hand LaunchServices a `file://` path. Now https + github.com only.
+
+### Correctness & performance
+
+- Crash when two alive hosts share a MAC (proxy ARP, multi-homed NIC, a router answering for
+  several of its own IPs) — `Dictionary(uniqueKeysWithValues:)` trapped on the duplicate key.
+- Port-scan cancellation raced its own completion, leaving the *next* scan un-cancellable.
+- `stop()` didn't stop a deep-profile port scan; it kept hammering the network.
+- Reverse-DNS timeout never fired — a task group awaits all its children, so the 1s budget was
+  fiction and one slow host stalled the whole enrich phase.
+- mDNS re-resolved every known service on every browse callback: a connection storm growing with the
+  square of the number of services, for the app's lifetime.
+- O(n²) host merge on the main actor (~2.1 billion string compares at the 65k cap) → O(1) index.
+- Sorting re-parsed the IP string on every comparison → stored `ipNumeric`.
+- Probe timeouts were never cancelled, holding connections for the full window after an answer.
+- Export failures were swallowed by `try?` — a full disk looked exactly like a successful save.
+
+### Fork-specific
+
+- **The in-app update check points at this fork** (`iPScannerUpdateRepository` in `Info.plist`).
+  Upstream's builds don't contain these fixes, so advertising them here would walk you onto a
+  downgrade. Point it wherever you like by editing that key.
+
+---
+
 ## Installation
 
-1. Download the latest `.dmg` from **[Releases](https://github.com/canberkys/iPScanner/releases/latest)**.
-2. Open the `.dmg` and drag `iPScanner.app` into `Applications`.
-3. On first launch, macOS Gatekeeper will refuse to run the app because it isn't signed with an Apple Developer ID. Pick **one** of the workarounds below.
+**This fork publishes no binaries — [build it from source](#development).** Building locally also
+sidesteps Gatekeeper entirely: the app is signed with your own machine's key, so there is no
+quarantine flag and no `xattr` incantation.
 
-<details>
-<summary><strong>First launch — Gatekeeper workaround</strong></summary>
+Upstream ships a prebuilt `.dmg` at [its releases](https://github.com/canberkys/iPScanner/releases/latest).
+It is ad-hoc signed rather than notarized, so macOS blocks it on first launch until you clear the
+quarantine attribute — upstream's README documents that workaround. Those builds do not contain
+this fork's fixes.
 
-#### Option A — single command (recommended)
+> ℹ️ iPScanner runs without sandboxing because network discovery needs direct ICMP / ARP / TCP
+> socket access. Everything stays local — no telemetry, no third-party calls.
 
-Strip every quarantine attribute the system added during download:
+---
+
+## Development
+
+**Requirements**: macOS 14.4+, Xcode 15+, [xcodegen](https://github.com/yonki/xcodegen).
+
+The Xcode project is generated from `project.yml` and is not checked in, so `xcodegen generate` is
+the first step after cloning and again after any `project.yml` change.
 
 ```bash
-xattr -cr /Applications/iPScanner.app
+brew install xcodegen
+git clone https://github.com/Ctere1/iPScanner.git
+cd iPScanner
+xcodegen generate
 ```
 
-This runs once and the app launches normally from then on.
+### Build & run the app
 
-#### Option B — UI route
+```bash
+xcodegen generate     # after cloning, and after any project.yml change
+open iPScanner.xcodeproj
+# ⌘R to build and run
+```
 
-1. Right-click `iPScanner.app` in Finder → **Open** → **Open**.
-2. If that fails on macOS Sequoia (15) or Tahoe (26+), open **System Settings → Privacy & Security**, scroll to the *Security* section, and click **Open Anyway** next to "iPScanner was blocked".
-3. macOS will prompt once more — click **Open**.
+From the command line, without opening Xcode:
 
-> ℹ️ iPScanner runs without sandboxing because network discovery requires direct ICMP / ARP / TCP socket access. All operations stay local — no telemetry, no third-party calls.
+```bash
+xcodebuild build -project iPScanner.xcodeproj -scheme iPScanner \
+  -configuration Debug -destination 'platform=macOS'
+
+open ~/Library/Developer/Xcode/DerivedData/iPScanner-*/Build/Products/Debug/iPScanner.app
+```
+
+### Tests
+
+```bash
+xcodebuild test -project iPScanner.xcodeproj -scheme iPScanner -destination 'platform=macOS'
+```
+
+184 tests, no network access required. They cover the CIDR/range and target-file parsers, the
+oversized-range guard, ICMP echo build/parse (including truncated and hostile packets), NetBIOS
+wire format against a real captured Windows reply, OUI 3-tier vendor lookup, the subnet calculator,
+CSV / IP:Port / text-report escaping (including formula injection), snapshot encode/decode and diff,
+device classification, name-source resolution, saved ranges, the CLI argument parser, and update
+version comparison plus release-URL validation.
+
+### Build the CLI
+
+```bash
+xcodebuild build -project iPScanner.xcodeproj -scheme ipscanner \
+  -configuration Release -destination 'platform=macOS'
+```
+
+### Build a release .dmg
+
+```bash
+brew install create-dmg              # in addition to xcodegen
+./scripts/build-dmg.sh 1.2.0         # version is optional, defaults to "dev"
+```
+
+Archives Release, ad-hoc signs, and writes `build/iPScanner-<version>.dmg`. It also tries to refresh
+the OUI database from `standards-oui.ieee.org`, falling back to the bundled copy when offline.
+
+<details>
+<summary>Notes on the toolchain</summary>
+
+If `xcodebuild` reports *"tool 'xcodebuild' requires Xcode"*, `xcode-select` is pointed at the
+Command Line Tools. Either repoint it (`sudo xcode-select -s /Applications/Xcode.app`) or prefix
+commands for the current shell only:
+
+```bash
+export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
+```
+
+The IEEE OUI databases (`oui.txt`, `oui28.txt`, `oui36.txt`) are bundled in the repo. The release CI
+workflow refreshes them from `standards-oui.ieee.org` on every tag push.
 
 </details>
 
@@ -68,9 +190,9 @@ This runs once and the app launches normally from then on.
 
 - **CIDR + range input** — `10.0.0.0/24`, `192.168.1.50-192.168.1.200`, or comma-separated multiple ranges (`10.0.0.0/24, 172.16.0.0/24`)
 - **Auto-detected default subnet** from the active interface (en0/en1)
-- **Concurrent ping** (32 parallel) using `/sbin/ping`
+- **Concurrent ping** (32 parallel) over an unprivileged ICMP socket — no subprocess per host, no blocked thread (`/sbin/ping` remains a fallback if the kernel refuses the socket)
 - **TCP fallback probe** (445/80/443/22/3389) for hosts that block ICMP — Windows Firewall, etc.
-- **Reverse DNS** with 1-second timeout (race-cancelable)
+- **Host names** — reverse DNS first, then mDNS, then NetBIOS, with the source shown; most LANs have no PTR records, so the fallbacks are what make the column useful
 - **MAC address** via `arp -an` parsing
 - **Vendor lookup** with the bundled IEEE OUI registry — MA-L (24-bit), MA-M (28-bit), and MA-S (36-bit) for sub-block accuracy
 - **mDNS / Bonjour** service discovery (`_airplay`, `_homekit`, `_smb`, `_ssh`, `_ipp`, `_googlecast`, …)
@@ -123,8 +245,8 @@ Selecting a single host opens the right-side panel automatically. The panel is r
 - **`ipscanner` CLI** — headless binary inside the app bundle for cron / launchd / scripts (see [Command-line interface](#command-line-interface-ipscanner))
 - **NetBIOS name fetcher** — Standard / Deep profiles pull Windows computer name + workgroup via UDP 137 when DNS is stale
 - **Subnet calculator popover** — `function` icon in the toolbar; `/N` → network, broadcast, host range, count, dotted mask, wildcard
-- **In-app update check** — auto-checks GitHub Releases once per 24 h, also available under `Help → Check for Updates…`
-- **TTL column** — parsed from `/sbin/ping`, optional column with an OS hint tooltip
+- **In-app update check** — auto-checks GitHub Releases once per 24 h, also available under `Help → Check for Updates…`; the repository it queries is the `iPScannerUpdateRepository` key in `Info.plist` (this fork, not upstream)
+- **TTL column** — read from the ICMP reply's IP header, optional column with an OS hint tooltip
 - **IP:Port export** and **Text Report export** — flat `ip:port` lines for piping into Nmap / firewalls, and a padded human-readable report for tickets
 
 </details>
@@ -146,7 +268,8 @@ Selecting a single host opens the right-side panel automatically. The panel is r
 - **Appearance picker** in `View → Appearance` (System / Light / Dark)
 - **Live updates** — alive hosts stream into the table as they're discovered
 - **Status bar** — progress, alive count, filter match, elapsed time, warnings, diff summary
-- Sandbox disabled (required for ICMP / ARP / raw socket access)
+- **Responsive toolbar** — collapses into an overflow menu as the window and inspector take space, rather than overlapping itself
+- Sandbox disabled (required for ICMP / ARP / socket access)
 
 </details>
 
@@ -155,6 +278,8 @@ Selecting a single host opens the right-side panel automatically. The panel is r
 ## Command-line interface (`ipscanner`)
 
 The same scanning engine is exposed as a headless `ipscanner` binary inside the app bundle, suitable for cron jobs, `launchd`, or piping into other tools.
+
+Building from source, the binary lands in DerivedData rather than `/Applications` — see [Build the CLI](#build-the-cli). The examples below use the installed-app path.
 
 ```bash
 # Discover hosts on a subnet, write JSON to a file
@@ -179,35 +304,10 @@ sudo ln -s /Applications/iPScanner.app/Contents/MacOS/ipscanner /usr/local/bin/i
 
 ---
 
-## Build from source
-
-**Requirements**: macOS 14.4+, Xcode 15+, [xcodegen](https://github.com/yonki/xcodegen)
-
-```bash
-brew install xcodegen
-git clone https://github.com/canberkys/iPScanner.git
-cd iPScanner
-xcodegen generate
-open iPScanner.xcodeproj
-# Cmd+R to build and run
-```
-
-<details>
-<summary>OUI databases & tests</summary>
-
-The IEEE OUI databases (`oui.txt`, `oui28.txt`, `oui36.txt`) are bundled in the repo. The release CI workflow refreshes them from `standards-oui.ieee.org` on every tag push.
-
-```bash
-xcodebuild test -scheme iPScanner -destination 'platform=macOS'
-```
-
-140+ unit tests cover the parsers (CIDR/range, ports, target file), OUI 3-tier vendor lookup, NetBIOS wire-format build & response parsing, subnet calculator, CSV / IP:Port / text-report escaping, snapshot encode/decode, snapshot diff, device classifier, saved-range model, CLI argument parser, and update-version comparison.
-
-</details>
-
----
-
 ## Roadmap
+
+> Upstream's roadmap, kept for reference. This fork tracks upstream rather than planning its
+> own feature work; its changes are the fixes listed [above](#whats-different-in-this-fork).
 
 <details>
 <summary><strong>v1.0 — completed</strong></summary>
@@ -294,7 +394,7 @@ Moved iPScanner from a desktop tool to a usable operations tool.
 
 ## Tech stack
 
-SwiftUI (macOS 14.4+, `@Observable`, `NavigationSplitView`) · Swift Concurrency (`async/await`, `TaskGroup`, `AsyncStream`) · Network framework (`NWConnection`, `NWBrowser`) · `Process` for `/sbin/ping`, `/usr/sbin/arp` · zero third-party Swift packages.
+SwiftUI (macOS 14.4+, `@Observable`, `NavigationSplitView`) · Swift Concurrency (`async/await`, `TaskGroup`, `AsyncStream`) · Network framework (`NWConnection`, `NWBrowser`) · BSD sockets for ICMP echo · `Process` for `/usr/sbin/arp` · zero third-party Swift packages.
 
 ---
 
@@ -304,8 +404,14 @@ MIT — see [LICENSE](LICENSE).
 
 Vendor data from the [IEEE Standards Association OUI registries](https://standards-oui.ieee.org/) (public).
 
-## Author
+## Credits
 
-**Canberk Kılıçarslan** — [canberkki.com](https://canberkki.com)
+**iPScanner** is by **Canberk Kılıçarslan** — [canberkki.com](https://canberkki.com) —
+at [canberkys/iPScanner](https://github.com/canberkys/iPScanner). All of the app's design and
+features are his work.
 
-Feedback, bug reports, and pull requests welcome via [Issues](https://github.com/canberkys/iPScanner/issues).
+This fork is maintained by **Cemil Tan** at [Ctere1/iPScanner](https://github.com/Ctere1/iPScanner)
+and adds the fixes listed under [What's different in this fork](#whats-different-in-this-fork).
+
+Issues with the fork's changes → [fork issues](https://github.com/Ctere1/iPScanner/issues).
+Issues with the app itself → [upstream issues](https://github.com/canberkys/iPScanner/issues).
