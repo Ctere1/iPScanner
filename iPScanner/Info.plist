@@ -62,5 +62,7 @@
 	<string></string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
+	<key>iPScannerUpdateRepository</key>
+	<string>Ctere1/iPScanner</string>
 </dict>
 </plist>

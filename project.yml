@@ -56,6 +56,9 @@ targets:
         # self-signed certs through its own URLSession delegate.
         NSAppTransportSecurity:
           NSAllowsLocalNetworking: true
+        # Repository the in-app update check queries. A fork must point this at its own releases:
+        # advertising upstream's builds would send users to a download without this fork's fixes.
+        iPScannerUpdateRepository: Ctere1/iPScanner
         NSPrincipalClass: NSApplication
         NSMainStoryboardFile: ""
         NSLocalNetworkUsageDescription: iPScanner discovers devices and services on your local network using ICMP ping, ARP, and Bonjour/mDNS.

@@ -19,7 +19,33 @@ final class UpdateChecker {
     private(set) var lastError: String?
     private(set) var isChecking: Bool = false
 
-    static let releasesAPI = URL(string: "https://api.github.com/repos/canberkys/iPScanner/releases/latest")!
+    /// Repository the update check queries, as `owner/name`.
+    ///
+    /// Read from Info.plist rather than hardcoded so a fork points at its own releases without
+    /// patching code — and so this stays a one-line change when rebasing onto upstream. It matters
+    /// for correctness, not just tidiness: a fork's build advertising upstream's releases would
+    /// walk the user onto a download that does not contain the fork's fixes.
+    nonisolated static let defaultRepository = "Ctere1/iPScanner"
+
+    nonisolated static let repository: String = {
+        guard let raw = Bundle.main.object(forInfoDictionaryKey: "iPScannerUpdateRepository") as? String,
+              isValidRepository(raw) else { return defaultRepository }
+        return raw
+    }()
+
+    /// `owner/name`, restricted to the characters GitHub allows. The value is interpolated into a
+    /// URL, so anything else could point the check somewhere other than the intended repo.
+    nonisolated static func isValidRepository(_ value: String) -> Bool {
+        let parts = value.split(separator: "/", omittingEmptySubsequences: false)
+        guard parts.count == 2 else { return false }
+        let allowed = Set("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._-")
+        return parts.allSatisfy { !$0.isEmpty && $0.allSatisfy(allowed.contains) }
+    }
+
+    nonisolated static var releasesAPI: URL? {
+        URL(string: "https://api.github.com/repos/\(repository)/releases/latest")
+    }
+
     static let autoCheckInterval: TimeInterval = 24 * 60 * 60  // 24 hours
 
     nonisolated static func currentVersion() -> String {
@@ -64,6 +90,10 @@ final class UpdateChecker {
             } else {
                 availableUpdate = nil
             }
+            lastError = nil
+        } catch UpdateError.noReleases {
+            // Nothing published to be behind of, so this reads as "up to date" rather than an error.
+            availableUpdate = nil
             lastError = nil
         } catch {
             lastError = error.localizedDescription
@@ -119,12 +149,17 @@ final class UpdateChecker {
         case invalidResponse
         case decodingFailed
         case untrustedReleaseURL
+        case misconfiguredRepository
+        /// The repository exists but has published nothing yet — not a failure.
+        case noReleases
 
         var errorDescription: String? {
             switch self {
             case .invalidResponse: "GitHub Releases API did not return a successful response."
             case .decodingFailed: "Could not decode the release payload."
             case .untrustedReleaseURL: "The release payload pointed somewhere other than github.com."
+            case .misconfiguredRepository: "The configured update repository is not a valid owner/name."
+            case .noReleases: "No releases have been published yet."
             }
         }
     }
@@ -137,13 +172,18 @@ final class UpdateChecker {
     }
 
     private func fetchLatestRelease() async throws -> Release {
-        var request = URLRequest(url: Self.releasesAPI)
+        guard let url = Self.releasesAPI else { throw UpdateError.misconfiguredRepository }
+        var request = URLRequest(url: url)
         request.timeoutInterval = 10
         request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
         request.setValue("iPScanner-update-check", forHTTPHeaderField: "User-Agent")
 
         let (data, response) = try await URLSession.shared.data(for: request)
-        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+        guard let http = response as? HTTPURLResponse else { throw UpdateError.invalidResponse }
+        // A repo with no releases answers 404. That is the expected state for a fresh fork, not a
+        // failure worth showing the user as one.
+        if http.statusCode == 404 { throw UpdateError.noReleases }
+        guard (200..<300).contains(http.statusCode) else {
             throw UpdateError.invalidResponse
         }
         let release: Release

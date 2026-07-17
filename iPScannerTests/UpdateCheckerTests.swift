@@ -51,6 +51,47 @@ final class UpdateCheckerTests: XCTestCase {
         XCTAssertFalse(UpdateChecker.isNewer("v1.0.0", than: "v1.0.0"))
     }
 
+    // MARK: - Repository configuration
+
+    func testAcceptsWellFormedRepository() {
+        for repo in ["Ctere1/iPScanner", "canberkys/iPScanner", "a/b", "org.name/repo-name_1.2"] {
+            XCTAssertTrue(UpdateChecker.isValidRepository(repo), "should accept \(repo)")
+        }
+    }
+
+    /// The value is interpolated into the API URL, so anything that could redirect the check
+    /// elsewhere — a path escape, an embedded host, a query — must be rejected.
+    func testRejectsMalformedRepository() {
+        let bad = [
+            "",
+            "noslash",
+            "too/many/parts",
+            "/leading",
+            "trailing/",
+            "owner/repo?x=1",
+            "owner/repo#frag",
+            "../../evil",
+            "evil.com/a/b",
+            "owner /repo",
+            "owner/repo/../../other"
+        ]
+        for repo in bad {
+            XCTAssertFalse(UpdateChecker.isValidRepository(repo), "should reject \(repo.debugDescription)")
+        }
+    }
+
+    /// The bundle under test has no override, so the default must stand on its own.
+    func testDefaultRepositoryIsThisFork() {
+        XCTAssertTrue(UpdateChecker.isValidRepository(UpdateChecker.defaultRepository))
+        XCTAssertEqual(UpdateChecker.defaultRepository, "Ctere1/iPScanner")
+    }
+
+    func testReleasesAPIPointsAtConfiguredRepository() throws {
+        let url = try XCTUnwrap(UpdateChecker.releasesAPI)
+        XCTAssertEqual(url.host, "api.github.com")
+        XCTAssertEqual(url.path, "/repos/\(UpdateChecker.repository)/releases/latest")
+    }
+
     // MARK: - Release URL validation
 
     func testAcceptsGitHubReleaseURL() {
