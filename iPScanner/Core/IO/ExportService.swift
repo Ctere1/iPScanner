@@ -10,6 +10,14 @@ enum ExportService {
         let rttMs: Double?
         let ttl: Int?
         let openPorts: [Int]
+        /// Ports actually probed. Distinguishes "nothing open" from "never looked" for a reader of
+        /// the export, the same way the table does — an empty openPorts alone cannot.
+        var scannedPorts: [Int] = []
+        /// What the scan thinks this is, or nil when it could not tell. Absent rather than
+        /// "unknown": a consumer filtering on the field should not have to know the magic word.
+        var deviceType: String?
+        /// Present only when the scan is not confident, so a reader knows which rows to doubt.
+        var deviceConfidence: String?
     }
 
     static func rows(from hosts: [Host], label: (Host) -> String?) -> [Row] {
@@ -22,13 +30,18 @@ enum ExportService {
                 vendor: h.vendor,
                 rttMs: h.rttMs,
                 ttl: h.ttl,
-                openPorts: h.openPorts
+                openPorts: h.openPorts,
+                scannedPorts: h.scannedPorts,
+                deviceType: h.deviceType == .unknown ? nil : h.deviceType.label,
+                deviceConfidence: h.classification.confidence < .high
+                    ? h.classification.confidence.label
+                    : nil
             )
         }
     }
 
     static func csv(rows: [Row]) -> String {
-        var out = "IP,Label,Hostname,MAC,Vendor,RTT (ms),TTL,Open Ports\n"
+        var out = "IP,Label,Hostname,MAC,Vendor,Device,RTT (ms),TTL,Open Ports\n"
         for r in rows {
             let rtt = r.rttMs.map { String(format: "%.1f", $0) } ?? ""
             let ttl = r.ttl.map(String.init) ?? ""
@@ -39,6 +52,7 @@ enum ExportService {
                 escape(r.hostname),
                 escape(r.mac),
                 escape(r.vendor),
+                escape(r.deviceType),
                 rtt,
                 ttl,
                 escape(ports)
@@ -79,8 +93,10 @@ enum ExportService {
         let ipWidth      = max(15, rows.map { $0.ip.count }.max() ?? 15)
         let hostWidth    = max(20, rows.map { ($0.hostname ?? "").count }.max() ?? 20)
         let vendorWidth  = max(20, rows.map { ($0.vendor ?? "").count }.max() ?? 20)
+        let deviceWidth  = max(8, rows.map { ($0.deviceType ?? "").count }.max() ?? 8)
 
         out += pad("IP", to: ipWidth) + "  "
+            + pad("Device", to: deviceWidth) + "  "
             + pad("Hostname", to: hostWidth) + "  "
             + pad("Vendor", to: vendorWidth) + "  "
             + "Ports\n"
@@ -88,6 +104,7 @@ enum ExportService {
         for r in rows {
             let ports = r.openPorts.map(String.init).joined(separator: ", ")
             out += pad(r.ip, to: ipWidth) + "  "
+                + pad(r.deviceType ?? "—", to: deviceWidth) + "  "
                 + pad(r.hostname ?? "—", to: hostWidth) + "  "
                 + pad(r.vendor ?? "—", to: vendorWidth) + "  "
                 + (ports.isEmpty ? "—" : ports) + "\n"

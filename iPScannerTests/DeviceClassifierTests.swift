@@ -97,6 +97,18 @@ final class DeviceClassifierTests: XCTestCase {
         XCTAssertNotEqual(type(s), .nas)
     }
 
+    /// Found on a real network: a Mac with AirPlay Receiver on, scanned by the CLI — which has no
+    /// OUI data, so the vendor guard above could not fire — came back as a NAS. 5000 alongside 7000
+    /// is AirPlay's pair, and no Synology opens 7000.
+    func testAirPlayPairIsNotANASEvenWithoutAVendor() {
+        XCTAssertNotEqual(type(signals(ports: [5000, 7000])), .nas)
+    }
+
+    /// The port 5000 that really is a Synology still reads as one.
+    func testPort5000WithoutAirPlayIsStillANAS() {
+        XCTAssertEqual(type(signals(ports: [5000, 445])), .nas)
+    }
+
     /// Bare "philips" used to mean IoT, which made every Philips television a light bulb.
     func testPhilipsTVIsATVNotIoT() {
         XCTAssertEqual(type(signals(mdns: ["_googlecast._tcp"], vendor: "Philips TV")), .tv)

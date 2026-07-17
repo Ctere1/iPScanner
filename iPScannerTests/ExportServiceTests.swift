@@ -11,17 +11,19 @@ final class ExportServiceTests: XCTestCase {
         vendor: String? = nil,
         rttMs: Double? = nil,
         ttl: Int? = nil,
-        openPorts: [Int] = []
+        openPorts: [Int] = [],
+        deviceType: String? = nil
     ) -> ExportService.Row {
         ExportService.Row(
             ip: ip, label: label, hostname: hostname, mac: mac,
-            vendor: vendor, rttMs: rttMs, ttl: ttl, openPorts: openPorts
+            vendor: vendor, rttMs: rttMs, ttl: ttl, openPorts: openPorts,
+            deviceType: deviceType
         )
     }
 
     func testCSVHeader() {
         let csv = ExportService.csv(rows: [])
-        XCTAssertTrue(csv.hasPrefix("IP,Label,Hostname,MAC,Vendor,RTT (ms),TTL,Open Ports"))
+        XCTAssertTrue(csv.hasPrefix("IP,Label,Hostname,MAC,Vendor,Device,RTT (ms),TTL,Open Ports"))
     }
 
     func testCSVBasic() {
@@ -33,12 +35,13 @@ final class ExportServiceTests: XCTestCase {
                 vendor: "Vendor Inc",
                 rttMs: 1.5,
                 ttl: 64,
-                openPorts: [80, 443]
+                openPorts: [80, 443],
+                deviceType: "Router"
             )
         ])
         let lines = csv.split(separator: "\n")
         XCTAssertEqual(lines.count, 2)
-        XCTAssertEqual(lines[1], "10.0.0.1,Router,hgw.local,AA:BB:CC:DD:EE:FF,Vendor Inc,1.5,64,80;443")
+        XCTAssertEqual(lines[1], "10.0.0.1,Router,hgw.local,AA:BB:CC:DD:EE:FF,Vendor Inc,Router,1.5,64,80;443")
     }
 
     func testCSVEscapesComma() {
@@ -191,5 +194,48 @@ final class ExportServiceTests: XCTestCase {
     func testCSVDoesNotQuoteNumericColumns() {
         let csv = ExportService.csv(rows: [makeRow(rttMs: 2.5, ttl: 64)])
         XCTAssertTrue(csv.contains(",2.5,64,"))
+    }
+}
+
+// MARK: - Device type
+
+extension ExportServiceTests {
+
+    /// An unidentified host leaves the column empty rather than writing "unknown" or "—": a
+    /// consumer filtering the export should not have to know a magic word.
+    func testUnidentifiedHostHasAnEmptyDeviceCell() {
+        let host = iPScanner.Host(ip: "10.0.0.1", status: .alive)
+        let rows = ExportService.rows(from: [host]) { _ in nil }
+        XCTAssertNil(rows[0].deviceType)
+
+        let line = ExportService.csv(rows: rows).split(separator: "\n")[1]
+        XCTAssertEqual(line, "10.0.0.1,,,,,,,,")
+    }
+
+    func testIdentifiedHostCarriesItsTypeIntoTheExport() {
+        var host = iPScanner.Host(ip: "10.0.0.1", status: .alive)
+        host.classification = DeviceClassifier.live.classify(
+            DeviceSignals(ip: "10.0.0.1", openPorts: [9100])
+        )
+        let rows = ExportService.rows(from: [host]) { _ in nil }
+        XCTAssertEqual(rows[0].deviceType, "Printer")
+        XCTAssertTrue(ExportService.csv(rows: rows).contains("Printer"))
+    }
+
+    /// Confidence is only carried when it is worth doubting — a confident row says nothing extra.
+    func testConfidenceIsOnlyReportedWhenItIsNotHigh() {
+        var confident = iPScanner.Host(ip: "10.0.0.1", status: .alive)
+        confident.classification = DeviceClassification(type: .printer, confidence: .high, score: 9)
+        XCTAssertNil(ExportService.rows(from: [confident]) { _ in nil }[0].deviceConfidence)
+
+        var unsure = iPScanner.Host(ip: "10.0.0.2", status: .alive)
+        unsure.classification = DeviceClassification(type: .server, confidence: .low, score: 3)
+        XCTAssertEqual(ExportService.rows(from: [unsure]) { _ in nil }[0].deviceConfidence, "Low confidence")
+    }
+
+    /// The export carries what was probed, so a reader can tell "nothing open" from "never looked".
+    func testScannedPortsReachTheExport() {
+        let host = iPScanner.Host(ip: "10.0.0.1", openPorts: [], scannedPorts: [22, 80], status: .alive)
+        XCTAssertEqual(ExportService.rows(from: [host]) { _ in nil }[0].scannedPorts, [22, 80])
     }
 }

@@ -81,6 +81,20 @@ struct IPScannerCLI {
             stderr.write(Data("warning: --fetch-banners requires --ports; skipping banner fetch\n".utf8))
         }
 
+        // Identify what was found.
+        //
+        // No Bonjour here: MDNSDiscovery is @Observable and app-only, so the CLI is missing the
+        // `_device-info._tcp` model string and the service types the GUI gets. Ports, vendor,
+        // hostname, TTL, NetBIOS and (on Deep) SSDP/SNMP all still reach the rules — the CLI simply
+        // identifies a little less, rather than differently.
+        let gateway = NetworkInterface.defaultGateway()
+        let classifier = DeviceClassifier.live
+        for ip in aliveByIP.keys {
+            guard var host = aliveByIP[ip] else { continue }
+            host.classification = classifier.classify(DeviceSignals.from(host: host, gateway: gateway))
+            aliveByIP[ip] = host
+        }
+
         // Sort + format + emit
         let sorted = aliveByIP.values.sorted { lhs, rhs in
             (IPv4.uint32(from: lhs.ip) ?? 0) < (IPv4.uint32(from: rhs.ip) ?? 0)

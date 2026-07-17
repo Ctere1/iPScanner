@@ -418,7 +418,8 @@ final class ScanController {
                 workgroup: h.workgroup,
                 openPorts: h.openPorts,
                 scannedPorts: h.scannedPorts,
-                serviceTitle: h.serviceTitle
+                serviceTitle: h.serviceTitle,
+                probeDescription: h.probeDescription
             )
         }
         var relevantLabels: [String: String] = [:]
@@ -504,10 +505,14 @@ final class ScanController {
                 openPorts: rec.openPorts,
                 scannedPorts: rec.scannedPorts,
                 serviceTitle: rec.serviceTitle,
+                probeDescription: rec.probeDescription,
                 status: .alive
             )
         }
         hostStore.replaceAll(with: restored)
+        // Derived, not restored: a snapshot stores what was observed, so opening an old file
+        // classifies it with today's rules rather than replaying the verdict it shipped with.
+        reclassifyHosts()
         labelStore.merge(snapshot.labels)
         selection = []
         elapsed = 0

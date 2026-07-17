@@ -90,6 +90,10 @@ enum DeviceRules {
                    .anyDescrPhrase(["chromecast", "google cast", "android tv", "fire tv", "roku"])),
         DeviceRule("airplay.mdns", .appleTV, W.strong, .mdns("_airplay._tcp")),
         DeviceRule("airplay.port.7000", .appleTV, W.weak, .port(7000)),
+        // 7000 and 5000 together is AirPlay's pair. Worth naming because 5000 alone reads as
+        // Synology's web UI, and a Mac with AirPlay Receiver on has both — found on a real network,
+        // where a Mac was being called a NAS.
+        DeviceRule("airplay.ports.pair", .appleTV, W.moderate, .all([.port(7000), .port(5000)])),
         DeviceRule("raop.mdns", .speaker, W.moderate, .mdns("_raop._tcp")),
         DeviceRule("speaker.vendor", .speaker, W.strong,
                    .anyDescrPhrase(["sonos", "bose", "denon", "yamaha", "harman", "marshall"])),
@@ -131,8 +135,15 @@ enum DeviceRules {
                    .anyMDNS(["_afpovertcp._tcp", "_nfs._tcp", "_smb._tcp"])),
         // 5000 is Synology's web UI — and also macOS AirPlay Receiver, which is why this is
         // guarded rather than taken at face value.
+        // Guarded twice, because 5000 is genuinely ambiguous: it is Synology's web UI *and* macOS
+        // AirPlay Receiver. The vendor check catches it when the OUI is known; the 7000 check
+        // catches it when it is not, since 5000+7000 is AirPlay's pair and no Synology opens 7000.
         DeviceRule("nas.port.dsm", .nas, W.moderate,
-                   .all([.anyPort([5000, 5001]), .not(.descrPhrase("apple"))])),
+                   .all([
+                       .anyPort([5000, 5001]),
+                       .not(.descrPhrase("apple")),
+                       .not(.port(7000))
+                   ])),
         DeviceRule("nas.port.stack", .nas, W.moderate,
                    .all([.port(445), .anyPort([548, 2049, 5000, 5001])])),
         // Whole token: "jonas-pc" is not a NAS.

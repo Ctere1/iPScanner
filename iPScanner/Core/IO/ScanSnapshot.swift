@@ -1,6 +1,12 @@
 import Foundation
 
 struct ScanSnapshot: Codable {
+    /// Unchanged by the probeDescription field added below.
+    ///
+    /// Nothing reads this number — no code path rejects or migrates on it — and the format stays
+    /// compatible in both directions regardless: the decoder takes every field as optional, and an
+    /// older build ignores a key it does not know. Bumping it would imply a break that does not
+    /// exist.
     static let currentVersion = 1
 
     let version: Int
@@ -23,11 +29,18 @@ struct ScanSnapshot: Codable {
         /// tests keep compiling.
         let scannedPorts: [Int]
         let serviceTitle: String?
+        /// What SSDP/UPnP and SNMP said.
+        ///
+        /// The device *type* is deliberately not stored alongside it. A snapshot records what was
+        /// observed; the verdict is derived from that on load, so improving the rules improves old
+        /// files too rather than freezing whatever the classifier believed on the day the file was
+        /// written.
+        let probeDescription: String?
 
         init(ip: String, hostname: String?, mac: String?, vendor: String?,
              rttMs: Double?, ttl: Int?, netbiosName: String? = nil,
              workgroup: String? = nil, openPorts: [Int], scannedPorts: [Int] = [],
-             serviceTitle: String?) {
+             serviceTitle: String?, probeDescription: String? = nil) {
             self.ip = ip
             self.hostname = hostname
             self.mac = mac
@@ -39,6 +52,7 @@ struct ScanSnapshot: Codable {
             self.openPorts = openPorts
             self.scannedPorts = scannedPorts
             self.serviceTitle = serviceTitle
+            self.probeDescription = probeDescription
         }
 
         // Custom decoder lets older `.ipscan.json` files (no `ttl` / `netbiosName`
@@ -59,6 +73,7 @@ struct ScanSnapshot: Codable {
             // probed", which is the honest reading of a file that never knew the difference.
             self.scannedPorts = try c.decodeIfPresent([Int].self, forKey: .scannedPorts) ?? self.openPorts
             self.serviceTitle = try c.decodeIfPresent(String.self, forKey: .serviceTitle)
+            self.probeDescription = try c.decodeIfPresent(String.self, forKey: .probeDescription)
         }
     }
 }
