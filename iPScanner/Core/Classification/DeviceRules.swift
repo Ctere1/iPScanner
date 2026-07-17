@@ -179,7 +179,10 @@ enum DeviceRules {
         ])),
         DeviceRule("router.vendor.enterprise", .router, W.strong,
                    .anyDescrPhrase(["cisco", "juniper", "fortinet", "arista"])),
-        DeviceRule("ap.vendor", .accessPoint, W.strong,
+        // 5, matching nas.vendor: these companies make networking gear and nothing else, which is
+        // as specific a statement as "Synology". At W.strong they lost to the server rules below,
+        // and a UniFi AP — SSH and a web UI, like every AP — came back as "Server".
+        DeviceRule("ap.vendor", .accessPoint, 5,
                    .anyDescrPhrase(["ubiquiti", "aruba", "ruckus", "meraki", "engenius"])),
         DeviceRule("ap.descr", .accessPoint, W.strong,
                    .anyDescrPhrase(["unifi", "access point", "uap-", "wireless ap"])),
@@ -274,20 +277,28 @@ enum DeviceRules {
 
     // MARK: - Server
     //
-    // Deliberately the weakest rules in the table. "Has port 80 open" is the least informative
-    // fact a host can offer — nearly everything with a network stack answers it. As a first-match
-    // rule it used to shadow IoT entirely, so every smart bulb with a web UI was a "Server".
-    // Reaching the threshold now takes SSH *and* a web port *and* not being an IoT vendor, which
-    // is roughly what the word means.
+    // Deliberately the weakest rules in the table, and they were still too strong.
+    //
+    // The principle they kept getting wrong: SSH and a web UI describe how a device is
+    // *administered*, not what it is. Every access point, router, NAS and firewall has both. So
+    // "server" evidence must never outrank a specific identification — as a first-match rule it
+    // shadowed IoT entirely (every smart bulb with a web UI was a "Server"), and even after being
+    // demoted to weights it still totalled 6 and beat a named AP vendor at 4, so a UniFi AP came
+    // back as "Server" on a real network.
+    //
+    // SSH + a web port now totals 4: enough to clear the threshold and name an actual server, not
+    // enough to outvote anything that knows what it is looking at.
 
     static let servers: [DeviceRule] = [
-        DeviceRule("server.ssh", .server, W.weak, .port(22)),
+        DeviceRule("server.ssh", .server, W.hint, .port(22)),
         DeviceRule("server.http", .server, W.hint, .anyPort([80, 443, 8080])),
-        DeviceRule("server.stack", .server, W.moderate, .all([
+        DeviceRule("server.stack", .server, W.weak, .all([
             .port(22),
             .anyPort([80, 443, 8080]),
             .not(.anyDescrPhrase(iotVendors))
         ])),
+        // Plex is a real identification rather than an administration surface, so it keeps its
+        // weight: nothing else answers on 32400.
         DeviceRule("server.plex", .server, W.moderate, .port(32400))
     ]
 }

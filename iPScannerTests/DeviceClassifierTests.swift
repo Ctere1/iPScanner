@@ -359,3 +359,59 @@ extension DeviceClassifierTests {
         XCTAssertEqual(DeviceClassifier.live.classify(appleTV).type, .appleTV)
     }
 }
+
+// MARK: - Administration surface vs identity
+//
+// Reported from a real network: an access point showing as "Server". SSH and a web UI say how a
+// device is administered, not what it is — every AP, router, NAS and firewall has both — so this
+// evidence must never outvote something that knows what it is looking at.
+
+extension DeviceClassifierTests {
+
+    /// A UniFi AP: SSH and a web UI, like every AP. It scored server=6 against accessPoint=4.
+    func testUniFiAccessPointIsNotAServer() {
+        let ap = DeviceSignals(
+            ip: "10.0.0.4",
+            vendor: "Ubiquiti Networks Inc.",
+            ttl: 64,
+            openPorts: [22, 80, 443]
+        )
+        XCTAssertEqual(DeviceClassifier.live.classify(ap).type, .accessPoint)
+    }
+
+    func testArubaAccessPointIsNotAServer() {
+        let ap = DeviceSignals(ip: "10.0.0.9", vendor: "Aruba Networks", ttl: 64, openPorts: [22, 443])
+        XCTAssertEqual(DeviceClassifier.live.classify(ap).type, .accessPoint)
+    }
+
+    /// A NAS is administered the same way and must not lose to it either.
+    func testSynologyWithSSHIsStillANAS() {
+        let nas = DeviceSignals(
+            ip: "10.0.0.20",
+            vendor: "Synology Incorporated",
+            openPorts: [22, 80, 443, 5000]
+        )
+        XCTAssertEqual(DeviceClassifier.live.classify(nas).type, .nas)
+    }
+
+    /// A firewall at the gateway routes, so Router is the honest answer — and it must beat both
+    /// the server evidence and the access-point rules it shares a vendor tier with.
+    func testFirewallAtTheGatewayIsARouter() {
+        let fortigate = DeviceSignals(
+            ip: "10.0.0.1",
+            vendor: "Fortinet, Inc.",
+            ttl: 255,
+            openPorts: [80, 443],
+            isDefaultGateway: true
+        )
+        let result = DeviceClassifier.live.classify(fortigate)
+        XCTAssertEqual(result.type, .router)
+        XCTAssertEqual(result.confidence, .high)
+    }
+
+    /// The demotion must not go so far that a real server stops being one.
+    func testAPlainServerIsStillAServer() {
+        XCTAssertEqual(type(signals(ports: [22, 80])), .server)
+        XCTAssertEqual(type(signals(ports: [22, 443, 8080])), .server)
+    }
+}
