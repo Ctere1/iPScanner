@@ -51,8 +51,11 @@ targets:
         LSApplicationCategoryType: public.app-category.utilities
         LSMinimumSystemVersion: $(MACOSX_DEPLOYMENT_TARGET)
         NSHumanReadableCopyright: "© 2026 Canberk Kılıçarslan. MIT License."
+        # Scoped to the local network rather than NSAllowsArbitraryLoads: the blanket exemption also
+        # dropped the TLS floor for the update check. BannerProbe handles local plaintext and
+        # self-signed certs through its own URLSession delegate.
         NSAppTransportSecurity:
-          NSAllowsArbitraryLoads: true
+          NSAllowsLocalNetworking: true
         NSPrincipalClass: NSApplication
         NSMainStoryboardFile: ""
         NSLocalNetworkUsageDescription: iPScanner discovers devices and services on your local network using ICMP ping, ARP, and Bonjour/mDNS.

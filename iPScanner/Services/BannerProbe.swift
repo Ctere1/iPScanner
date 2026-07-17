@@ -73,7 +73,10 @@ enum BannerProbe {
         port: Int = 22,
         timeoutMs: Int = 1000
     ) async -> String? {
-        guard let nwPort = NWEndpoint.Port(rawValue: UInt16(port)) else { return nil }
+        // Range-checked before the conversion, as in PortScanner.probeOne: `UInt16(port)` traps
+        // rather than returning nil for an out-of-range port.
+        guard (1...65535).contains(port),
+              let nwPort = NWEndpoint.Port(rawValue: UInt16(port)) else { return nil }
         let connection = NWConnection(
             to: .hostPort(host: NWEndpoint.Host(ip), port: nwPort),
             using: .tcp

@@ -118,13 +118,22 @@ final class UpdateChecker {
     enum UpdateError: Error, LocalizedError {
         case invalidResponse
         case decodingFailed
+        case untrustedReleaseURL
 
         var errorDescription: String? {
             switch self {
             case .invalidResponse: "GitHub Releases API did not return a successful response."
             case .decodingFailed: "Could not decode the release payload."
+            case .untrustedReleaseURL: "The release payload pointed somewhere other than github.com."
             }
         }
+    }
+
+    /// `html_url` arrives from the network and is handed to LaunchServices when the user clicks
+    /// "View Release" — which will launch a local app bundle for a `file://` URL just as readily
+    /// as it opens a web page. Anything but an https github.com link is rejected.
+    nonisolated static func isTrustedReleaseURL(_ url: URL) -> Bool {
+        url.scheme?.lowercased() == "https" && url.host?.lowercased() == "github.com"
     }
 
     private func fetchLatestRelease() async throws -> Release {
@@ -137,10 +146,15 @@ final class UpdateChecker {
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
             throw UpdateError.invalidResponse
         }
+        let release: Release
         do {
-            return try JSONDecoder().decode(Release.self, from: data)
+            release = try JSONDecoder().decode(Release.self, from: data)
         } catch {
             throw UpdateError.decodingFailed
         }
+        guard Self.isTrustedReleaseURL(release.htmlURL) else {
+            throw UpdateError.untrustedReleaseURL
+        }
+        return release
     }
 }

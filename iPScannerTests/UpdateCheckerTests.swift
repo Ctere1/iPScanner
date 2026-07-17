@@ -50,4 +50,27 @@ final class UpdateCheckerTests: XCTestCase {
         XCTAssertTrue(UpdateChecker.isNewer("1.2.0", than: "v1.1.0"))
         XCTAssertFalse(UpdateChecker.isNewer("v1.0.0", than: "v1.0.0"))
     }
+
+    // MARK: - Release URL validation
+
+    func testAcceptsGitHubReleaseURL() {
+        let url = URL(string: "https://github.com/canberkys/iPScanner/releases/tag/v1.2.1")!
+        XCTAssertTrue(UpdateChecker.isTrustedReleaseURL(url))
+    }
+
+    /// `html_url` is attacker-controlled if the API response is forged. LaunchServices will launch
+    /// a local app bundle for a file:// URL as readily as it opens a web page.
+    func testRejectsNonGitHubOrNonHTTPSReleaseURL() {
+        let hostile = [
+            "file:///Applications/Malware.app",
+            "http://github.com/canberkys/iPScanner/releases",
+            "https://github.com.evil.example/canberkys/iPScanner",
+            "https://evil.example/releases",
+            "javascript:alert(1)"
+        ]
+        for raw in hostile {
+            let url = URL(string: raw)!
+            XCTAssertFalse(UpdateChecker.isTrustedReleaseURL(url), "should reject \(raw)")
+        }
+    }
 }
