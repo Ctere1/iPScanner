@@ -14,9 +14,16 @@ DMG_PATH="$BUILD_DIR/iPScanner-$VERSION.dmg"
 command -v xcodegen >/dev/null || { echo "xcodegen not found. brew install xcodegen"; exit 1; }
 command -v create-dmg >/dev/null || { echo "create-dmg not found. brew install create-dmg"; exit 1; }
 
-echo "==> Refreshing OUI database (best effort)"
-curl -fsSL --max-time 60 https://standards-oui.ieee.org/oui/oui.txt \
-  -o iPScanner/Resources/oui.txt || echo "    (could not refresh, using bundled copy)"
+# All three registries, not just MA-L: OUILookup resolves a MAC against MA-S and MA-M before
+# falling back to MA-L, so refreshing oui.txt alone left the two narrower registries stale and a
+# local .dmg disagreeing with a CI-built one about the same MAC.
+echo "==> Refreshing OUI databases (best effort)"
+refresh_oui() {
+  curl -fsSL --max-time 60 "$1" -o "$2" || echo "    (could not refresh $(basename "$2"), using bundled copy)"
+}
+refresh_oui https://standards-oui.ieee.org/oui/oui.txt     iPScanner/Resources/oui.txt
+refresh_oui https://standards-oui.ieee.org/oui28/mam.txt   iPScanner/Resources/oui28.txt
+refresh_oui https://standards-oui.ieee.org/oui36/oui36.txt iPScanner/Resources/oui36.txt
 
 echo "==> xcodegen generate"
 xcodegen generate

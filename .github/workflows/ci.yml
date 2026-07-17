@@ -1,0 +1,66 @@
+name: CI
+
+# Release builds run the tests too, but only on a version tag — which means a regression could sit
+# on main for weeks and only surface while cutting a release. This runs the same checks on every
+# push and pull request instead.
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    runs-on: macos-latest
+    timeout-minutes: 25
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install tools
+        run: brew install xcodegen
+
+      # Architectural, not a build failure the compiler would raise on its own — a tool target
+      # links AppKit and Observation without complaint. See the script's header.
+      - name: Check layering
+        run: ./scripts/check-layering.sh
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      # Both targets: the app is what the test bundle links against, but the CLI is the one that
+      # breaks when a UI import leaks into a shared file, and nothing else here would catch it.
+      - name: Build app
+        run: |
+          xcodebuild build \
+            -scheme iPScanner \
+            -configuration Debug \
+            -destination 'platform=macOS' \
+            CODE_SIGN_IDENTITY="-" \
+            CODE_SIGN_STYLE=Manual \
+            DEVELOPMENT_TEAM=""
+
+      - name: Build CLI
+        run: |
+          xcodebuild build \
+            -scheme ipscanner \
+            -configuration Debug \
+            -destination 'platform=macOS' \
+            CODE_SIGN_IDENTITY="-" \
+            CODE_SIGN_STYLE=Manual \
+            DEVELOPMENT_TEAM=""
+
+      - name: Run unit tests
+        run: |
+          xcodebuild test \
+            -scheme iPScanner \
+            -configuration Debug \
+            -destination 'platform=macOS' \
+            CODE_SIGN_IDENTITY="-" \
+            CODE_SIGN_STYLE=Manual \
+            DEVELOPMENT_TEAM=""
