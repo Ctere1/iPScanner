@@ -2,40 +2,51 @@ import SwiftUI
 import AppKit
 
 struct HostInspector: View {
-    let host: Host?
+    /// Non-optional: the caller only builds this when a host is selected, so the old "Select a
+    /// host" placeholder branch could never render.
+    let host: Host
     let label: String?
-    let anchor: String?
+    let anchor: String
     let services: [MDNSDiscovery.ServiceRecord]
     /// Best name across DNS/mDNS/NetBIOS. Passed in because only ContentView holds the mDNS index.
     let resolvedName: ResolvedName?
-    let onLabelChange: (String?) -> Void
+    let onClose: () -> Void
+    /// `(anchor, newValue)` — the anchor is passed back so the caller writes to the host that was
+    /// being edited rather than re-resolving whatever is selected by the time this fires.
+    let onLabelChange: (String, String?) -> Void
 
     @State private var labelText: String = ""
     @State private var labelSavedAt: Date?
+    /// Captured when editing starts. A commit can land after the selection has already moved on —
+    /// switching hosts, or the panel closing — and must still name the host it belongs to.
+    @State private var editingAnchor: String?
+    /// The label as it was when editing started, for the "did it actually change?" test. Comparing
+    /// against the live `label` compared against the *new* host's label by commit time.
+    @State private var labelSnapshot: String?
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
-                if let host {
-                    hostSections(host)
-                } else {
-                    placeholder
-                }
+                hostSections(host)
             }
             .padding(16)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .onAppear {
-            labelText = label ?? ""
-        }
-        .onDisappear {
+        .onAppear { beginEditing() }
+        .onDisappear { commitLabelIfChanged() }
+        .onChange(of: host.id) { _, _ in
+            // Runs after `host`/`label` have already become the new host's, which is exactly why
+            // the commit below must use the captured anchor and snapshot.
             commitLabelIfChanged()
+            beginEditing()
         }
-        .onChange(of: host?.id) { _, _ in
-            commitLabelIfChanged()
-            labelText = label ?? ""
-        }
+    }
+
+    private func beginEditing() {
+        labelText = label ?? ""
+        labelSnapshot = label
+        editingAnchor = anchor
     }
 
     @ViewBuilder
@@ -55,29 +66,17 @@ struct HostInspector: View {
         actionsSection(host: host)
     }
 
-    @ViewBuilder
-    private var placeholder: some View {
-        VStack(spacing: 10) {
-            Spacer().frame(height: 60)
-            Image(systemName: "rectangle.righthalf.inset.filled")
-                .font(.system(size: 36))
-                .foregroundStyle(.secondary)
-            Text("Select a host")
-                .font(.headline)
-                .foregroundStyle(.secondary)
-            Text("Click a row to view its details.")
-                .font(.caption)
-                .foregroundStyle(.tertiary)
-            Spacer()
-        }
-        .frame(maxWidth: .infinity)
-    }
 
+    /// Writes the edit to the host it was typed against.
+    ///
+    /// This used to call back into a closure that re-read the *current* selection, so typing a
+    /// label on host A and clicking host B wrote A's text onto B — and closing the panel dropped
+    /// the text entirely, because by then there was no selection to guard against.
     private func commitLabelIfChanged() {
-        guard host != nil else { return }
+        guard let editingAnchor else { return }
         let trimmed = labelText.trimmingCharacters(in: .whitespacesAndNewlines)
-        if trimmed != (label ?? "") {
-            onLabelChange(trimmed.isEmpty ? nil : trimmed)
+        if trimmed != (labelSnapshot ?? "") {
+            onLabelChange(editingAnchor, trimmed.isEmpty ? nil : trimmed)
             labelSavedAt = Date()
             Task { @MainActor in
                 try? await Task.sleep(for: .seconds(1.5))
@@ -111,6 +110,15 @@ struct HostInspector: View {
                 }
             }
             Spacer(minLength: 0)
+            // The panel's only visible way out. It had none: no button, no Escape, no menu item —
+            // the only exits were ⌘-clicking the row or clicking empty space below the table.
+            Button(action: onClose) {
+                Image(systemName: "xmark")
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+            .help("Hide inspector (⌥⌘I)")
+            .accessibilityLabel("Hide inspector")
         }
     }
 
@@ -149,12 +157,10 @@ struct HostInspector: View {
                 infoRow("Workgroup", wg)
             }
             infoRow("MAC", host.mac?.uppercased(), monospaced: true)
-            if let anchor {
-                infoRow("Anchor", anchor, monospaced: true, secondary: true)
-            }
-            if !host.openPorts.isEmpty {
-                infoRow("Ports", PortScanner.formatList(host.openPorts))
-            }
+            infoRow("Anchor", anchor, monospaced: true, secondary: true)
+            // Shown even with nothing open: "scanned, all closed" is a result worth stating, and
+            // hiding the row made it indistinguishable from never having scanned.
+            infoRow("Ports", PortScanner.displayList(open: host.openPorts, scanned: host.scannedPorts))
             if let t = host.serviceTitle {
                 infoRow("Title", t)
             }

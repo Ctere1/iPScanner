@@ -36,6 +36,7 @@ enum AppearanceMode: String, CaseIterable, Identifiable {
 @main
 struct iPScannerApp: App {
     @AppStorage("iPScanner.appearance") private var appearanceRaw: String = AppearanceMode.system.rawValue
+    @AppStorage("iPScanner.inspectorVisible") private var inspectorVisible = true
 
     private var appearance: AppearanceMode {
         AppearanceMode(rawValue: appearanceRaw) ?? .system
@@ -113,7 +114,26 @@ struct iPScannerApp: App {
                 }
                 .keyboardShortcut("s", modifiers: [.command, .shift])
             }
+            CommandGroup(after: .pasteboard) {
+                Divider()
+                // ⇧⌘C, not ⌘C. The old handler was an invisible zero-size button in the toolbar
+                // with a window-scoped ⌘C, so copying text out of the search or label field
+                // silently copied the selected IPs instead.
+                Button("Copy IP Addresses") {
+                    NotificationCenter.default.post(name: .iPScannerCommandCopyIPs, object: nil)
+                }
+                .keyboardShortcut("c", modifiers: [.command, .shift])
+                // ⌘F was documented in a code comment but never actually wired to anything.
+                Button("Find") {
+                    NotificationCenter.default.post(name: .iPScannerCommandFind, object: nil)
+                }
+                .keyboardShortcut("f", modifiers: [.command])
+            }
             CommandGroup(after: .sidebar) {
+                // Same @AppStorage key ContentView reads, so the menu, the shortcut and the
+                // inspector's own close button are three faces of one piece of state.
+                Toggle("Inspector", isOn: $inspectorVisible)
+                    .keyboardShortcut("i", modifiers: [.command, .option])
                 Divider()
                 Picker("Appearance", selection: $appearanceRaw) {
                     ForEach(AppearanceMode.allCases) { mode in
@@ -171,4 +191,6 @@ extension Notification.Name {
     static let iPScannerCommandCompareSnapshot = Notification.Name("iPScanner.command.compareSnapshot")
     static let iPScannerCommandClearComparison = Notification.Name("iPScanner.command.clearComparison")
     static let iPScannerCommandCheckForUpdates = Notification.Name("iPScanner.command.checkForUpdates")
+    static let iPScannerCommandFind = Notification.Name("iPScanner.command.find")
+    static let iPScannerCommandCopyIPs = Notification.Name("iPScanner.command.copyIPs")
 }

@@ -5,7 +5,13 @@ import AppKit
 struct ContentView: View {
     @State private var controller = ScanController()
     @State private var mdns = MDNSDiscovery()
-    @State private var showingPortScan = false
+    /// Carries the hosts to scan, captured when the menu item was clicked.
+    ///
+    /// A sheet, not a popover: the trigger is often a context menu or the overflow menu, neither of
+    /// which has an on-screen anchor — the old popover had exactly one anchor, in a toolbar group
+    /// that only renders at full width, so at any narrower layout "Port Scan…" did nothing at all.
+    @State private var portScanRequest: PortScanRequest?
+    @State private var pendingBulkDelete: BulkDeleteRequest?
     @State private var portsInput = PortScanner.defaultPortsInput
     @State private var portError: String?
     @State private var fetchBanners = true
@@ -30,6 +36,18 @@ struct ContentView: View {
         }
     }
 
+    struct BulkDeleteRequest: Identifiable {
+        let id = UUID()
+        let ids: Set<Host.ID>
+    }
+
+    struct PortScanRequest: Identifiable {
+        let id = UUID()
+        /// Explicit, because `runPortScan` defaults to the current selection — which meant
+        /// right-clicking an unselected row scanned the selected hosts instead of that row.
+        let targets: Set<Host.ID>
+    }
+
     private struct ImportAlert: Identifiable {
         let id = UUID()
         let title: String
@@ -37,18 +55,26 @@ struct ContentView: View {
     }
 
     // Column visibility (persisted) — Status, Device icon, IP always visible.
-    @AppStorage("iPScanner.col.label") private var showColLabel = true
-    @AppStorage("iPScanner.col.hostname") private var showColHostname = true
-    @AppStorage("iPScanner.col.mac") private var showColMAC = false
-    @AppStorage("iPScanner.col.vendor") private var showColVendor = true
-    @AppStorage("iPScanner.col.title") private var showColTitle = false
-    @AppStorage("iPScanner.col.rtt") private var showColRTT = false
-    @AppStorage("iPScanner.col.ttl") private var showColTTL = false
-    @AppStorage("iPScanner.col.ports") private var showColPorts = true
+    @State private var columns = ColumnVisibility()
 
     @AppStorage("iPScanner.inspectorWidth") private var inspectorWidth: Double = 320
+    @AppStorage("iPScanner.inspectorVisible") private var inspectorVisible = true
     @AppStorage("iPScanner.scanProfile") private var profileRaw: String = ScanProfile.standard.rawValue
     @AppStorage("iPScanner.rescanInterval") private var rescanIntervalRaw: String = RescanInterval.off.rawValue
+
+    private var alertPresented: Binding<Bool> {
+        Binding(
+            get: { controller.alert != nil },
+            set: { if !$0 { controller.dismissAlert() } }
+        )
+    }
+
+    private var bulkDeletePresented: Binding<Bool> {
+        Binding(
+            get: { pendingBulkDelete != nil },
+            set: { if !$0 { pendingBulkDelete = nil } }
+        )
+    }
 
     private var profileBinding: Binding<ScanProfile> {
         Binding(
@@ -70,13 +96,22 @@ struct ContentView: View {
         )
     }
 
+    /// Resolved against `filteredHosts`, not `hosts`.
+    ///
+    /// Against `hosts`, filtering out the selected row left the inspector open showing a host that
+    /// was no longer in the table — and since ⌘-clicking the row was the only way to deselect, the
+    /// panel was stuck with no way out. Selection itself is deliberately left alone: the Table
+    /// remembers it, so clearing the filter brings back both the row and the panel.
     private var inspectedHost: Host? {
         guard controller.selection.count == 1,
               let id = controller.selection.first else { return nil }
-        return controller.hosts.first { $0.id == id }
+        return controller.filteredHosts.first { $0.id == id }
     }
 
-    private var showInspector: Bool { inspectedHost != nil }
+    /// The inspector was purely a shadow of selection, so there was nothing to close — no button,
+    /// no Escape, no menu item. Now it has its own visibility, and selecting a host only opens it
+    /// if the user hasn't hidden it. Sticky, like Xcode's inspector.
+    private var showInspector: Bool { inspectorVisible && inspectedHost != nil }
 
     private func diffTint(_ change: HostChange) -> Color {
         switch change {
@@ -99,7 +134,14 @@ struct ContentView: View {
         return attr
     }
 
+    // `body` is split into three expressions on purpose: as one chain — the layout plus ten
+    // notification handlers plus every sheet, alert and dialog — it grew past what the Swift
+    // type-checker will solve, and the build failed with "unable to type-check in reasonable time".
     var body: some View {
+        presentations(commandHandlers(rootLayout))
+    }
+
+    private var rootLayout: some View {
         NavigationSplitView {
             sidebar
                 .navigationSplitViewColumnWidth(min: 180, ideal: 220, max: 320)
@@ -113,19 +155,27 @@ struct ContentView: View {
                     StatusBar(controller: controller)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+                // Escape means "clear the selection" in a table; the inspector closing is the
+                // consequence, not the goal. Previously there was no Escape handling at all.
+                .onExitCommand {
+                    if !controller.selection.isEmpty { controller.selection = [] }
+                }
 
-                if showInspector {
+                // `showInspector` already proves the host exists, so this is not an optional dance:
+                // HostInspector takes a real Host and its dead "Select a host" placeholder is gone.
+                if showInspector, let host = inspectedHost {
                     ResizableDivider(width: $inspectorWidth, minWidth: 260, maxWidth: 460)
                     HostInspector(
-                        host: inspectedHost,
-                        label: inspectedHost.flatMap { controller.label(for: $0) },
-                        anchor: inspectedHost.map { controller.anchor(for: $0) },
-                        services: inspectedHost.map { mdns.services(for: $0.ip) } ?? [],
-                        resolvedName: inspectedHost.flatMap { resolvedName(for: $0) },
-                        onLabelChange: { newValue in
-                            if let h = inspectedHost {
-                                controller.setLabel(newValue, for: h)
-                            }
+                        host: host,
+                        label: controller.label(for: host),
+                        anchor: controller.anchor(for: host),
+                        services: mdns.services(for: host.ip),
+                        resolvedName: resolvedName(for: host),
+                        onClose: { inspectorVisible = false },
+                        // Keyed by the anchor captured when editing began, not by whatever is
+                        // selected when the commit lands — see HostInspector.
+                        onLabelChange: { anchor, newValue in
+                            controller.setLabel(newValue, forAnchor: anchor)
                         }
                     )
                     .frame(width: inspectorWidth)
@@ -140,6 +190,12 @@ struct ContentView: View {
             controller.detectDefaultSubnetIfNeeded()
             mdns.start()
         }
+    }
+
+    /// App-menu commands arrive as notifications (the pattern iPScannerApp already uses).
+    @ViewBuilder
+    private func commandHandlers<V: View>(_ content: V) -> some View {
+        content
         .onReceive(NotificationCenter.default.publisher(for: .iPScannerCommandRescan)) { _ in
             if !controller.isScanning { controller.start() }
         }
@@ -161,6 +217,17 @@ struct ContentView: View {
         .onReceive(NotificationCenter.default.publisher(for: .iPScannerCommandClearComparison)) { _ in
             controller.clearComparison()
         }
+        .onReceive(NotificationCenter.default.publisher(for: .iPScannerCommandFind)) { _ in
+            searchFieldFocused = true
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .iPScannerCommandCopyIPs)) { _ in
+            copySelectedIPs()
+        }
+    }
+
+    @ViewBuilder
+    private func presentations<V: View>(_ content: V) -> some View {
+        content
         .modifier(UpdateCheckOverlay(
             updateChecker: updateChecker,
             lastCheckEpoch: $updateLastCheckEpoch,
@@ -174,6 +241,31 @@ struct ContentView: View {
             ) { newName in
                 controller.renameSavedRange(saved.range, to: newName)
             }
+        }
+        .alert(
+            controller.alert?.title ?? "",
+            isPresented: alertPresented,
+            presenting: controller.alert
+        ) { _ in
+            Button("OK", role: .cancel) { controller.dismissAlert() }
+        } message: { alert in
+            Text(alert.message)
+        }
+        .confirmationDialog(
+            "Remove \(pendingBulkDelete?.ids.count ?? 0) hosts from the list?",
+            isPresented: bulkDeletePresented,
+            presenting: pendingBulkDelete
+        ) { request in
+            Button("Remove", role: .destructive) {
+                controller.deleteHosts(request.ids)
+                pendingBulkDelete = nil
+            }
+            Button("Cancel", role: .cancel) { pendingBulkDelete = nil }
+        } message: { _ in
+            Text("They'll reappear on the next scan. Labels are kept.")
+        }
+        .sheet(item: $portScanRequest) { request in
+            portScanSheet(request)
         }
         .alert(item: $importAlert) { alert in
             Alert(title: Text(alert.title), message: Text(alert.message), dismissButton: .default(Text("OK")))
@@ -254,6 +346,24 @@ struct ContentView: View {
         controller.hosts.first { $0.id == id }
     }
 
+    /// Explains where a Ports cell's value came from.
+    ///
+    /// The column is legitimately mixed under the Standard profile: a host that answered ICMP was
+    /// never port-probed and reads "—", while one found via the TCP fallback shows the handful of
+    /// ports discovery already tried. Without this the two look like the same column disagreeing
+    /// with itself.
+    private func portsHelp(for host: Host) -> String {
+        if host.scannedPorts.isEmpty {
+            return "Not port-scanned. Select the host and run Port Scan."
+        }
+        if Set(host.scannedPorts) == Set(NetworkScanner.tcpFallbackPorts) {
+            let tried = PortScanner.formatList(NetworkScanner.tcpFallbackPorts.sorted())
+            return "Found during host discovery, which tried \(tried). Run Port Scan for a full list."
+        }
+        let n = host.scannedPorts.count
+        return "Scanned \(n) port\(n == 1 ? "" : "s")."
+    }
+
     /// Reverse DNS first, then the names the scan picked up elsewhere. Most LANs have no PTR
     /// records, so without the fallbacks this column reads "—" for every host even when the device
     /// is announcing its name over Bonjour.
@@ -314,14 +424,6 @@ struct ContentView: View {
                 searchField(density)
                 overflowMenu
             }
-
-            // Hidden ⌘C handler — receives the keyboard shortcut without taking visual space.
-            // Lives here rather than in `viewControls` so the shortcut survives the compact layout.
-            Button("") { copySelectedIPs() }
-                .keyboardShortcut("c", modifiers: [.command])
-                .frame(width: 0, height: 0)
-                .opacity(0)
-                .accessibilityHidden(true)
         }
     }
 
@@ -348,7 +450,7 @@ struct ContentView: View {
                 Divider()
                 Button("Port Scan…") {
                     portError = nil
-                    showingPortScan = true
+                    portScanRequest = PortScanRequest(targets: controller.selection)
                 }
                 .disabled(controller.selection.isEmpty || controller.portScanInProgress || controller.isScanning)
 
@@ -374,16 +476,7 @@ struct ContentView: View {
                     Button("Clear filters") { controller.clearScopeFilters() }
                 }
 
-                Menu("Columns") {
-                    Toggle("Label", isOn: $showColLabel)
-                    Toggle("Hostname", isOn: $showColHostname)
-                    Toggle("MAC", isOn: $showColMAC)
-                    Toggle("Vendor", isOn: $showColVendor)
-                    Toggle("Title", isOn: $showColTitle)
-                    Toggle("RTT", isOn: $showColRTT)
-                    Toggle("TTL", isOn: $showColTTL)
-                    Toggle("Ports", isOn: $showColPorts)
-                }
+                Menu("Columns") { ColumnsMenu(columns: columns) }
             }
 
             Divider()
@@ -401,10 +494,6 @@ struct ContentView: View {
                     }
                 }
             }
-            Button("Subnet Calculator…") {
-                if subnetCalcInput.isEmpty { subnetCalcInput = controller.rangeInput }
-                showingSubnetCalc.toggle()
-            }
             Button("Import Targets…") { openTargetFile() }
                 .disabled(controller.isScanning)
         } label: {
@@ -417,7 +506,8 @@ struct ContentView: View {
     }
 
     /// A text field cannot live in a menu, so search is the one control the minimal row drops
-    /// outright rather than folding away. ⌘F still focuses it once the row has space again.
+    /// outright rather than folding away — ⌘F is a no-op at that width, and there is nowhere to
+    /// put it that would not push something else out.
     @ViewBuilder
     private func searchField(_ density: ToolbarDensity) -> some View {
         if !controller.hosts.isEmpty, density != .minimal {
@@ -480,10 +570,9 @@ struct ContentView: View {
             .buttonStyle(.plain)
             .help("Subnet calculator")
             .accessibilityLabel("Subnet calculator")
-            // Anchors the popover in every layout; hidden rather than removed when narrow so the
-            // overflow menu's "Subnet Calculator…" item still has something to attach to.
-            .frame(width: density == .full ? nil : 0)
-            .opacity(density == .full ? 1 : 0)
+            // Stays visible at every density. Hiding it with a zero-width frame left the popover
+            // anchored to an invisible point, so it opened somewhere unrelated to the click. A
+            // popover's trigger has to be the control the user actually pressed.
             .popover(isPresented: $showingSubnetCalc, arrowEdge: .bottom) {
                 subnetCalcPopover
             }
@@ -596,14 +685,11 @@ struct ContentView: View {
             if !controller.hosts.isEmpty {
                 Button {
                     portError = nil
-                    showingPortScan = true
+                    portScanRequest = PortScanRequest(targets: controller.selection)
                 } label: {
                     Label("Port Scan…", systemImage: "network.badge.shield.half.filled")
                 }
                 .disabled(controller.selection.isEmpty || controller.portScanInProgress || controller.isScanning)
-                .popover(isPresented: $showingPortScan, arrowEdge: .bottom) {
-                    portScanPopover
-                }
             }
 
             if controller.portScanInProgress {
@@ -685,25 +771,7 @@ struct ContentView: View {
                     .help("Show unresponsive IPs")
 
                 Menu {
-                    Toggle("Label", isOn: $showColLabel)
-                    Toggle("Hostname", isOn: $showColHostname)
-                    Toggle("MAC", isOn: $showColMAC)
-                    Toggle("Vendor", isOn: $showColVendor)
-                    Toggle("Title", isOn: $showColTitle)
-                    Toggle("RTT", isOn: $showColRTT)
-                    Toggle("TTL", isOn: $showColTTL)
-                    Toggle("Ports", isOn: $showColPorts)
-                    Divider()
-                    Button("Show All") {
-                        showColLabel = true; showColHostname = true; showColMAC = true
-                        showColVendor = true; showColTitle = true; showColRTT = true
-                        showColTTL = true; showColPorts = true
-                    }
-                    Button("Reset to Default") {
-                        showColLabel = true; showColHostname = true; showColMAC = false
-                        showColVendor = true; showColTitle = false; showColRTT = false
-                        showColTTL = false; showColPorts = true
-                    }
+                    ColumnsMenu(columns: columns)
                 } label: {
                     Image(systemName: "rectangle.split.3x1")
                 }
@@ -845,11 +913,19 @@ struct ContentView: View {
 
     @ViewBuilder
     private var content: some View {
+        // Bound once: `filteredHosts` filters *and* sorts the whole list on every read, and the
+        // body reads it more than once.
+        let rows = controller.filteredHosts
         if controller.hosts.isEmpty {
             emptyState
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if rows.isEmpty {
+            // Previously this branch didn't exist: filtering everything out left the table headers
+            // above an empty void with nothing to explain it or undo it.
+            filteredEmptyState
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
-            Table(controller.filteredHosts, selection: $controller.selection, sortOrder: $controller.sortOrder) {
+            Table(rows, selection: $controller.selection, sortOrder: $controller.sortOrder) {
                 TableColumn("●") { host in
                     Circle()
                         .fill(host.status == .alive ? Color.green : Color.gray)
@@ -886,23 +962,31 @@ struct ContentView: View {
                     .width(20)
                 }
 
-                if showColLabel {
+                // Not sortable: a label lives on the controller, keyed by anchor, not on `Host` —
+                // so there is no key path for `TableColumn(_:value:)` to sort by.
+                if columns.isVisible(.label) {
                     TableColumn("Label") { host in
                         if let label = controller.label(for: host) {
-                            Text(highlighted(label)).foregroundStyle(.tint)
+                            Text(highlighted(label))
+                                .foregroundStyle(.tint)
+                                .lineLimit(1)
+                                .truncationMode(.tail)
+                                .help(label)
                         } else {
-                            Text("")
+                            Text("—").foregroundStyle(.secondary)
                         }
                     }
                     .width(min: 80, ideal: 130)
                 }
 
-                if showColHostname {
-                    TableColumn("Hostname") { host in
+                if columns.isVisible(.hostname) {
+                    TableColumn("Hostname", value: \.hostnameSort) { host in
                         if let name = resolvedName(for: host) {
                             HStack(spacing: 4) {
                                 Text(highlighted(name.value))
                                     .lineLimit(1)
+                                    .truncationMode(.tail)
+                                    .help(name.value)
                                 if let badge = name.source.badge {
                                     Text(badge)
                                         .font(.system(size: 9, weight: .medium))
@@ -920,10 +1004,10 @@ struct ContentView: View {
                     .width(min: 110, ideal: 190)
                 }
 
-                if showColMAC {
-                    TableColumn("MAC") { host in
+                if columns.isVisible(.mac) {
+                    TableColumn("MAC", value: \.macSort) { host in
                         if let m = host.mac {
-                            Text(highlighted(m.uppercased())).monospaced()
+                            Text(highlighted(m.uppercased())).monospaced().lineLimit(1)
                         } else {
                             Text("—").monospaced().foregroundStyle(.secondary)
                         }
@@ -931,10 +1015,13 @@ struct ContentView: View {
                     .width(min: 120, ideal: 140)
                 }
 
-                if showColVendor {
-                    TableColumn("Vendor") { host in
+                if columns.isVisible(.vendor) {
+                    TableColumn("Vendor", value: \.vendorSort) { host in
                         if let v = host.vendor {
                             Text(highlighted(v))
+                                .lineLimit(1)
+                                .truncationMode(.tail)
+                                .help(v)
                         } else {
                             Text("—").foregroundStyle(.secondary)
                         }
@@ -942,8 +1029,8 @@ struct ContentView: View {
                     .width(min: 100, ideal: 150)
                 }
 
-                if showColTitle {
-                    TableColumn("Title") { host in
+                if columns.isVisible(.title) {
+                    TableColumn("Title", value: \.titleSort) { host in
                         if let t = host.serviceTitle {
                             Text(highlighted(t))
                                 .lineLimit(1)
@@ -956,20 +1043,30 @@ struct ContentView: View {
                     .width(min: 80, ideal: 130)
                 }
 
-                if showColRTT || showColTTL {
+                // RTT and TTL share one column, and so it cannot be sortable: `TableColumn(_:value:)`
+                // takes a single key path, and this cell shows whichever of the two is enabled.
+                // Splitting them would fix that, but takes the table to 11 columns — one past
+                // `TableColumnBuilder`'s limit — and wrapping in `Group` to get under it defeats the
+                // type-checker on an expression this size. Left merged deliberately.
+                if columns.isVisible(.rtt) || columns.isVisible(.ttl) {
                     TableColumn(rttTtlHeader) { host in
                         Text(rttTtlCell(host))
                             .monospaced()
+                            .lineLimit(1)
                             .foregroundStyle(.secondary)
                             .help(ttlHint(for: host.ttl))
                     }
                     .width(min: 60, ideal: 90, max: 140)
                 }
 
-                if showColPorts {
-                    TableColumn("Ports") { host in
-                        Text(PortScanner.formatList(host.openPorts))
-                            .foregroundStyle(.secondary)
+                if columns.isVisible(.ports) {
+                    TableColumn("Ports", value: \.openPortCount) { host in
+                        let text = PortScanner.displayList(open: host.openPorts, scanned: host.scannedPorts)
+                        Text(text)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                            .foregroundStyle(host.scannedPorts.isEmpty ? .secondary : .primary)
+                            .help(portsHelp(for: host))
                     }
                     .width(min: 80, ideal: 140)
                 }
@@ -1038,7 +1135,7 @@ struct ContentView: View {
             }
             Button("Port Scan…", systemImage: "network.badge.shield.half.filled") {
                 portError = nil
-                showingPortScan = true
+                portScanRequest = PortScanRequest(targets: [h.id])
             }
         }
         Section {
@@ -1066,7 +1163,7 @@ struct ContentView: View {
         }
         Button("Port Scan… (\(hosts.count) hosts)", systemImage: "network.badge.shield.half.filled") {
             portError = nil
-            showingPortScan = true
+            portScanRequest = PortScanRequest(targets: ids)
         }
         if wakeable > 0 {
             Button("Wake (\(wakeable) hosts)", systemImage: "power.circle.fill") {
@@ -1077,8 +1174,33 @@ struct ContentView: View {
             HostActions.copy(hosts.map(\.ip).joined(separator: "\n"))
         }
         Section {
+            // Confirmed because it is irreversible and bulk: there is no undo, and misclicking it
+            // with a large selection silently discards a whole scan's worth of rows. The
+            // single-host version stays unconfirmed — one row is cheap to get back.
             Button("Remove from List (\(hosts.count) hosts)", systemImage: "trash", role: .destructive) {
-                controller.deleteHosts(ids)
+                pendingBulkDelete = BulkDeleteRequest(ids: ids)
+            }
+        }
+    }
+
+    @ViewBuilder
+    /// Shown when a scan found hosts but the current search/filters hide all of them — a different
+    /// situation from "no scan yet", and one the user needs a way out of.
+    private var filteredEmptyState: some View {
+        Group {
+            if !controller.searchQuery.isEmpty {
+                ContentUnavailableView.search(text: controller.searchQuery)
+            } else {
+                ContentUnavailableView {
+                    Label("No matching hosts", systemImage: "line.3.horizontal.decrease.circle")
+                } description: {
+                    Text("\(controller.hosts.count) host\(controller.hosts.count == 1 ? " is" : "s are") hidden by the active filters.")
+                } actions: {
+                    Button("Clear Filters") {
+                        controller.clearScopeFilters()
+                        controller.showDeadHosts = true
+                    }
+                }
             }
         }
     }
@@ -1115,12 +1237,12 @@ struct ContentView: View {
         }
     }
 
-    // MARK: - Port scan popover
+    // MARK: - Port scan sheet
 
     @ViewBuilder
-    private var portScanPopover: some View {
+    private func portScanSheet(_ request: PortScanRequest) -> some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Port scan for \(controller.selection.count) host(s)")
+            Text("Port scan for \(request.targets.count) host(s)")
                 .font(.headline)
 
             TextField("Ports", text: $portsInput, prompt: Text("22, 80, 443, 8000-8100"))
@@ -1163,9 +1285,9 @@ struct ContentView: View {
 
             HStack {
                 Spacer()
-                Button("Cancel") { showingPortScan = false }
+                Button("Cancel") { portScanRequest = nil }
                     .keyboardShortcut(.cancelAction)
-                Button("Scan") { startPortScan() }
+                Button("Scan") { startPortScan(targets: request.targets) }
                     .keyboardShortcut(.defaultAction)
                     .buttonStyle(.borderedProminent)
             }
@@ -1214,7 +1336,7 @@ struct ContentView: View {
         do {
             try data.write(to: url)
         } catch {
-            controller.reportError("Could not save \(url.lastPathComponent): \(error.localizedDescription)")
+            controller.report(title: "Save failed", message: "Could not save \(url.lastPathComponent).\n\n\(error.localizedDescription)")
         }
     }
 
@@ -1241,7 +1363,7 @@ struct ContentView: View {
         do {
             return try ExportService.json(rows: currentRows())
         } catch {
-            controller.reportError("Could not encode JSON: \(error.localizedDescription)")
+            controller.report(title: "Export failed", message: "Could not encode JSON.\n\n\(error.localizedDescription)")
             return nil
         }
     }
@@ -1289,7 +1411,7 @@ struct ContentView: View {
     }
 
     private var rttTtlHeader: String {
-        switch (showColRTT, showColTTL) {
+        switch (columns.isVisible(.rtt), columns.isVisible(.ttl)) {
         case (true, true): "RTT / TTL"
         case (true, false): "RTT"
         case (false, true): "TTL"
@@ -1299,10 +1421,10 @@ struct ContentView: View {
 
     private func rttTtlCell(_ host: Host) -> String {
         var parts: [String] = []
-        if showColRTT {
+        if columns.isVisible(.rtt) {
             parts.append(host.rttMs.map { String(format: "%.1f ms", $0) } ?? "—")
         }
-        if showColTTL {
+        if columns.isVisible(.ttl) {
             parts.append(host.ttl.map { "ttl \($0)" } ?? "—")
         }
         return parts.joined(separator: " · ")
@@ -1321,7 +1443,9 @@ struct ContentView: View {
     // MARK: - Selection helpers
 
     private func copySelectedIPs() {
-        let ips = controller.hosts
+        // filteredHosts, not hosts: copy what is selected *and* visible, which is what the user
+        // believes they picked.
+        let ips = controller.filteredHosts
             .filter { controller.selection.contains($0.id) }
             .map(\.ip)
         guard !ips.isEmpty else { return }
@@ -1336,7 +1460,7 @@ struct ContentView: View {
         do {
             data = try SnapshotIO.encode(snapshot)
         } catch {
-            controller.reportError("Could not encode scan file: \(error.localizedDescription)")
+            controller.report(title: "Save failed", message: "Could not encode the scan file.\n\n\(error.localizedDescription)")
             return
         }
         save(data, contentType: .json, fileName: SnapshotIO.defaultFileName())
@@ -1352,7 +1476,7 @@ struct ContentView: View {
                 let snapshot = try SnapshotIO.decode(data)
                 controller.applySnapshot(snapshot)
             } catch {
-                controller.reportError("Failed to read scan file: \(error.localizedDescription)")
+                controller.report(title: "Could not open scan file", message: error.localizedDescription)
             }
         }
     }
@@ -1368,7 +1492,7 @@ struct ContentView: View {
                 let snapshot = try SnapshotIO.decode(data)
                 controller.loadComparisonBaseline(snapshot)
             } catch {
-                controller.reportError("Failed to read comparison file: \(error.localizedDescription)")
+                controller.report(title: "Could not open comparison file", message: error.localizedDescription)
             }
         }
     }
@@ -1402,7 +1526,7 @@ struct ContentView: View {
         )
     }
 
-    private func startPortScan() {
+    private func startPortScan(targets: Set<Host.ID>) {
         guard let ports = PortScanner.parsePorts(portsInput) else {
             portError = "Invalid port input (e.g. 22, 80, 443 or 8000-8100)"
             return
@@ -1412,8 +1536,8 @@ struct ContentView: View {
             return
         }
         portError = nil
-        showingPortScan = false
-        controller.runPortScan(ports: ports, fetchBanners: fetchBanners)
+        portScanRequest = nil
+        controller.runPortScan(ports: ports, fetchBanners: fetchBanners, targetIds: targets)
     }
 
     // MARK: - Status bar
