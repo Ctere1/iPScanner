@@ -69,7 +69,6 @@ struct ContentView: View {
     // Column visibility (persisted) — Status, Device icon, IP always visible.
     @State private var columns = ColumnVisibility()
 
-    @AppStorage("iPScanner.inspectorWidth") private var inspectorWidth: Double = 320
     @AppStorage("iPScanner.inspectorVisible") private var inspectorVisible = true
     @AppStorage("iPScanner.scanProfile") private var profileRaw: String = ScanProfile.standard.rawValue
     @AppStorage("iPScanner.rescanInterval") private var rescanIntervalRaw: String = RescanInterval.off.rawValue
@@ -123,7 +122,18 @@ struct ContentView: View {
     /// The inspector was purely a shadow of selection, so there was nothing to close — no button,
     /// no Escape, no menu item. Now it has its own visibility, and selecting a host only opens it
     /// if the user hasn't hidden it. Sticky, like Xcode's inspector.
-    private var showInspector: Bool { inspectorVisible && inspectedHost != nil }
+    ///
+    /// Get and set are deliberately asymmetric. Presentation is `visible && a host exists`, but only
+    /// `visible` is a user decision — so when the selection empties, the get flips to false and the
+    /// column collapses *without* the set ever running, and `inspectorVisible` keeps its true.
+    /// Reselect a host and the panel comes back. Writing `inspectorVisible = false` on the nil path
+    /// instead would make deselection silently un-stick the panel: the bug above describes.
+    private var inspectorPresented: Binding<Bool> {
+        Binding(
+            get: { inspectorVisible && inspectedHost != nil },
+            set: { inspectorVisible = $0 }
+        )
+    }
 
     // `body` is split into three expressions on purpose: as one chain — the layout plus ten
     // notification handlers plus every sheet, alert and dialog — it grew past what the Swift
@@ -137,44 +147,30 @@ struct ContentView: View {
             sidebar
                 .navigationSplitViewColumnWidth(min: 180, ideal: 220, max: 320)
         } detail: {
-            HStack(spacing: 0) {
-                VStack(spacing: 0) {
-                    toolbar
-                    Divider()
-                    content
-                    Divider()
-                    StatusBar(controller: controller)
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                // Escape means "clear the selection" in a table; the inspector closing is the
-                // consequence, not the goal. Previously there was no Escape handling at all.
-                .onExitCommand {
-                    if !controller.selection.isEmpty { controller.selection = [] }
-                }
-
-                // `showInspector` already proves the host exists, so this is not an optional dance:
-                // HostInspector takes a real Host and its dead "Select a host" placeholder is gone.
-                if showInspector, let host = inspectedHost {
-                    ResizableDivider(width: $inspectorWidth, minWidth: 260, maxWidth: 460)
-                    HostInspector(
-                        host: host,
-                        label: controller.label(for: host),
-                        anchor: controller.anchor(for: host),
-                        services: mdns.services(for: host.ip),
-                        resolvedName: mdns.resolvedName(for: host),
-                        onClose: { inspectorVisible = false },
-                        // Keyed by the anchor captured when editing began, not by whatever is
-                        // selected when the commit lands — see HostInspector.
-                        onLabelChange: { anchor, newValue in
-                            controller.setLabel(newValue, forAnchor: anchor)
-                        }
-                    )
-                    .frame(width: inspectorWidth)
-                }
+            VStack(spacing: 0) {
+                toolbar
+                Divider()
+                content
+                Divider()
+                StatusBar(controller: controller)
             }
-            .navigationSplitViewColumnWidth(min: 720, ideal: 1100)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            // Escape means "clear the selection" in a table; the inspector closing is the
+            // consequence, not the goal. Previously there was no Escape handling at all.
+            .onExitCommand {
+                if !controller.selection.isEmpty { controller.selection = [] }
+            }
+            // Was min 720 / ideal 1100, sized for a column that also had to hold the inspector.
+            // The inspector is its own column now, so this only has to cover the table: its own
+            // minimums are 640pt for the default columns, 800pt with every column plus Δ.
+            .navigationSplitViewColumnWidth(min: 660, ideal: 900)
         }
-        .frame(minWidth: 960, minHeight: 540)
+        // A real inspector column rather than a hand-rolled HStack sibling. The sibling was laid out
+        // *inside* the detail column, so opening it took its 320pt out of the table — dropping the
+        // table under the sum of its own column minimums, which made every column snap to its floor
+        // at once. As a column, this widens the window instead, and animates its own collapse.
+        .inspector(isPresented: inspectorPresented) { inspectorContent }
+        .frame(minWidth: 860, minHeight: 540)
         .onAppear {
             controller.profile = ScanProfile(rawValue: profileRaw) ?? .standard
             controller.rescanInterval = RescanInterval(rawValue: rescanIntervalRaw) ?? .off
@@ -187,6 +183,33 @@ struct ContentView: View {
         // when the scan happened to pass over it.
         .onChange(of: mdns.servicesByIP) {
             controller.reclassifyHosts()
+        }
+    }
+
+    /// A property rather than an inline closure on `rootLayout`: that expression already carries the
+    /// split view, a frame, an onAppear and an onChange, and is one of the ones that pushed `body`
+    /// past the type-checker in the first place — see the comment above `body`.
+    @ViewBuilder
+    private var inspectorContent: some View {
+        // No `else`. `.inspector` evaluates this closure whether or not it is presenting, but the
+        // column only exists when `inspectorPresented` is true, and that already proves a host —
+        // so HostInspector's non-optional Host is never violated, and the "Select a host"
+        // placeholder it deleted stays deleted. This `if let` is the formality, not a second state.
+        if let host = inspectedHost {
+            HostInspector(
+                host: host,
+                label: controller.label(for: host),
+                anchor: controller.anchor(for: host),
+                services: mdns.services(for: host.ip),
+                resolvedName: mdns.resolvedName(for: host),
+                onClose: { inspectorVisible = false },
+                // Keyed by the anchor captured when editing began, not by whatever is
+                // selected when the commit lands — see HostInspector.
+                onLabelChange: { anchor, newValue in
+                    controller.setLabel(newValue, forAnchor: anchor)
+                }
+            )
+            .inspectorColumnWidth(min: 260, ideal: 320, max: 460)
         }
     }
 

@@ -47,7 +47,11 @@ struct iPScannerApp: App {
             ContentView()
                 .preferredColorScheme(appearance.colorScheme)
         }
-        .windowResizability(.contentSize)
+        // .contentMinSize, not .contentSize: the inspector is a real split column, so .contentSize
+        // pinned the window's *maximum* to the content's ideal too — opening the inspector shoved
+        // the window wider and then refused to let it be dragged back. This honours the minimum
+        // floor and leaves the maximum to the user.
+        .windowResizability(.contentMinSize)
         .commands {
             CommandGroup(replacing: .appInfo) {
                 Button("About iPScanner") {

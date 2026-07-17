@@ -33,11 +33,10 @@ struct HostInspector: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        // Material rather than a solid fill: the panel sits over the table, and a translucent
-        // surface reads as floating above it rather than as a second opaque pane bolted on. It also
-        // follows the system's light/dark and vibrancy automatically, which a hardcoded colour
-        // cannot.
-        .background(.ultraThinMaterial)
+        // No background of its own. This used to carry .ultraThinMaterial on the grounds that "the
+        // panel sits over the table" — true when it was an HStack sibling overlapping the content,
+        // false now that it is an inspector column. A .withinWindow material sampling flat window
+        // chrome renders as dead grey; the column supplies its own background.
         .onAppear { beginEditing() }
         .onDisappear { commitLabelIfChanged() }
         .onChange(of: host.id) { _, _ in
