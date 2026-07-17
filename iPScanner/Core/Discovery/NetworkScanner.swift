@@ -144,6 +144,7 @@ struct NetworkScanner: HostDiscovering {
         // *fails*. So the classifier saw a vendor and a hostname and nothing else, and most
         // devices came back unidentified. This costs one bounded round per alive host, and only
         // ever runs against hosts already known to be up.
+        var fingerprinted: [(ip: String, open: [Int])] = []
         if !options.fingerprintPorts.isEmpty, !alive.isEmpty {
             let ports = options.fingerprintPorts
             await withWindowedTaskGroup(
@@ -151,6 +152,7 @@ struct NetworkScanner: HostDiscovering {
                 limit: Self.enrichConcurrency,
                 operation: { ip in (ip, await PortScanner.probe(ip, ports: ports)) }
             ) { ip, open in
+                fingerprinted.append((ip, open))
                 continuation.yield(.host(Host(
                     ip: ip,
                     openPorts: open,
@@ -161,8 +163,64 @@ struct NetworkScanner: HostDiscovering {
             }
         }
 
+        if Task.isCancelled {
+            continuation.yield(.done)
+            continuation.finish()
+            return
+        }
+
+        // --- Phase 4: ask the devices that advertise themselves ---
+        //
+        // Gated twice: on the profile, and on the host having actually answered on the port. A
+        // Standard scan therefore sends no SSDP and no SNMP, and a Deep scan only talks to hosts
+        // that already said they were listening — rather than spraying UDP at a whole subnet.
+        let ssdpTargets = options.includeSSDP
+            ? fingerprinted.filter { $0.open.contains(Int(SSDPResponse.port)) }.map(\.ip)
+            : []
+        let snmpTargets = options.includeSNMP
+            ? fingerprinted.filter { $0.open.contains(Int(SNMPMessage.port)) }.map(\.ip)
+            : []
+
+        if !ssdpTargets.isEmpty || !snmpTargets.isEmpty {
+            let targets = Array(Set(ssdpTargets + snmpTargets))
+            let ssdpSet = Set(ssdpTargets)
+            let snmpSet = Set(snmpTargets)
+            await withWindowedTaskGroup(
+                over: targets,
+                limit: Self.enrichConcurrency,
+                operation: { ip -> (String, String?) in
+                    async let ssdp: (SSDPResult, UPnPDescription?)? =
+                        ssdpSet.contains(ip) ? await SSDPProbe.probeAndDescribe(ip) : nil
+                    async let snmp: SNMPResult? =
+                        snmpSet.contains(ip) ? await SNMPProbe.probe(ip) : nil
+                    return (ip, Self.describe(ssdp: await ssdp, snmp: await snmp))
+                }
+            ) { ip, description in
+                guard let description else { return true }
+                continuation.yield(.host(Host(ip: ip, probeDescription: description, status: .alive)))
+                return true
+            }
+        }
+
         continuation.yield(.done)
         continuation.finish()
+    }
+
+    /// Pools what the two probes said into the one string the rules phrase-match against.
+    private static func describe(
+        ssdp: (SSDPResult, UPnPDescription?)?,
+        snmp: SNMPResult?
+    ) -> String? {
+        var parts: [String] = []
+        if let (result, description) = ssdp {
+            parts.append(contentsOf: [result.server, result.searchTarget].compactMap { $0 })
+            if let description { parts.append(description.descriptionText) }
+        }
+        if let snmp {
+            parts.append(contentsOf: [snmp.sysDescr, snmp.sysObjectID, snmp.sysName].compactMap { $0 })
+        }
+        let joined = parts.joined(separator: " ").trimmed
+        return joined.isEmpty ? nil : joined
     }
 
     // MARK: - discover (ping with TCP fallback)

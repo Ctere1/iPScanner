@@ -30,6 +30,12 @@ struct Host: Identifiable, Hashable, Sendable {
     /// a host that had been scanned and one that never had.
     var scannedPorts: [Int]
     var serviceTitle: String?
+    /// What SSDP/UPnP and SNMP said, pooled into one lowercase string.
+    ///
+    /// Stored as text rather than a struct per protocol: every rule that reads it does a phrase
+    /// match, and the alternative is five more optional fields that only the classifier ever
+    /// touches.
+    var probeDescription: String?
     var status: Status
 
     /// What this host is, and how sure we are.
@@ -56,6 +62,7 @@ struct Host: Identifiable, Hashable, Sendable {
         openPorts: [Int] = [],
         scannedPorts: [Int] = [],
         serviceTitle: String? = nil,
+        probeDescription: String? = nil,
         status: Status = .scanning
     ) {
         self.id = id
@@ -71,6 +78,7 @@ struct Host: Identifiable, Hashable, Sendable {
         self.openPorts = openPorts
         self.scannedPorts = scannedPorts
         self.serviceTitle = serviceTitle
+        self.probeDescription = probeDescription
         self.status = status
     }
 
@@ -108,6 +116,7 @@ struct Host: Identifiable, Hashable, Sendable {
         if let v = update.netbiosName { netbiosName = v }
         if let v = update.workgroup { workgroup = v }
         if let v = update.serviceTitle { serviceTitle = v }
+        if let v = update.probeDescription { probeDescription = v }
         if !update.scannedPorts.isEmpty {
             mergePortResults(probed: update.scannedPorts, open: update.openPorts)
         }

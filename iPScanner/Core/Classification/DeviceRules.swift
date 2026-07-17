@@ -33,7 +33,10 @@ enum DeviceRules {
             "mfc-", "dcp-", "jetdirect"
         ])),
         DeviceRule("printer.host", .printer, W.moderate,
-                   .anyHostToken(["printer", "print", "laserjet", "officejet"]))
+                   .anyHostToken(["printer", "print", "laserjet", "officejet"])),
+        // sysDescr on a network printer is unmistakable: "HP ETHERNET MULTI-ENVIRONMENT".
+        DeviceRule("printer.snmp", .printer, W.strong,
+                   .anyDescrPhrase(["ethernet multi-environment", "printer mib", "jetdirect"]))
     ]
 
     // MARK: - Apple
@@ -107,7 +110,10 @@ enum DeviceRules {
         DeviceRule("tv.title", .tv, W.moderate,
                    .anyDescrPhrase(["smart tv", "webos", "tizen", "bravia", "viera"])),
         // Whole token: "natview" no longer becomes a television.
-        DeviceRule("tv.host", .tv, W.moderate, .anyHostToken(["tv", "smarttv", "androidtv"]))
+        DeviceRule("tv.host", .tv, W.moderate, .anyHostToken(["tv", "smarttv", "androidtv"])),
+        DeviceRule("cast.ssdp.dial", .tv, W.moderate, .descrPhrase("urn:dial-multiscreen-org")),
+        DeviceRule("tv.ssdp.renderer", .tv, W.moderate,
+                   .descrPhrase("urn:schemas-upnp-org:device:mediarenderer"))
     ]
 
     // MARK: - NAS
@@ -135,7 +141,9 @@ enum DeviceRules {
             "openmediavault", "omv"
         ])),
         DeviceRule("nas.title", .nas, W.moderate,
-                   .anyDescrPhrase(["diskstation", "qts", "truenas", "openmediavault"]))
+                   .anyDescrPhrase(["diskstation", "qts", "truenas", "openmediavault"])),
+        DeviceRule("nas.ssdp.mediaserver", .nas, W.weak,
+                   .descrPhrase("urn:schemas-upnp-org:device:mediaserver"))
     ]
 
     // MARK: - Routers / access points
@@ -161,6 +169,12 @@ enum DeviceRules {
             "fritz", "mikrotik", "edgerouter"
         ])),
         DeviceRule("router.ttl255", .router, W.moderate, .ttlNear(255)),
+        // SSDP's InternetGatewayDevice is a device declaring itself the way out of the network.
+        DeviceRule("router.ssdp.igd", .router, W.strong,
+                   .descrPhrase("urn:schemas-upnp-org:device:internetgatewaydevice")),
+        DeviceRule("router.snmp", .router, W.moderate, .anyDescrPhrase([
+            "ios software", "routeros", "openwrt", "edgeos", "junos", "fortios", "vyos", "fortigate"
+        ])),
         // Was a full verdict on its own; a page titled "Login" is the weakest possible hint.
         DeviceRule("router.title", .router, W.hint, .anyDescrPhrase(["login", "router", "gateway"]))
     ]
@@ -184,6 +198,7 @@ enum DeviceRules {
         DeviceRule("linux.ttl64.ssh", .linux, W.moderate, .all([
             .ttlNear(64), .port(22), .not(.descrPhrase("apple")), .not(.anyPort([135, 445]))
         ])),
+        DeviceRule("linux.snmp", .linux, W.moderate, .descrPhrase("linux ")),
         DeviceRule("linux.host", .linux, W.weak, .anyHostToken([
             "ubuntu", "debian", "raspberrypi", "raspberry", "rpi", "fedora", "centos", "proxmox"
         ])),
@@ -233,7 +248,9 @@ enum DeviceRules {
         DeviceRule("console.host", .gameConsole, W.strong,
                    .anyHostToken(["playstation", "ps4", "ps5", "xbox", "switch", "nintendo"])),
         DeviceRule("console.descr", .gameConsole, W.strong,
-                   .anyDescrPhrase(["playstation", "xbox", "nintendo switch"]))
+                   .anyDescrPhrase(["playstation", "xbox", "nintendo switch"])),
+        DeviceRule("console.ssdp", .gameConsole, W.moderate,
+                   .anyDescrPhrase(["ps5", "ps4", "xbox one", "xbox series"]))
     ]
 
     // MARK: - Server

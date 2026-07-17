@@ -22,7 +22,7 @@ enum ScanProfile: String, CaseIterable, Identifiable, Sendable {
         case .standard:
             "Ping + TCP fallback + device fingerprint on alive hosts — identifies what it finds."
         case .deep:
-            "Standard + full port scan with banner fetch on alive hosts."
+            "Standard + full port scan, banners, and UPnP/SNMP queries on hosts that answer them."
         }
     }
 

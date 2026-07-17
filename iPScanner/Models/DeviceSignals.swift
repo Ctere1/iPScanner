@@ -13,6 +13,8 @@ struct DeviceSignals: Hashable, Sendable {
     var netbiosName: String?
     var workgroup: String?
     var serviceTitle: String?
+    /// SSDP SERVER / UPnP device description / SNMP sysDescr, pooled.
+    var probeDescription: String?
     var ttl: Int?
     var openPorts: Set<Int> = []
     var scannedPorts: Set<Int> = []
@@ -39,6 +41,7 @@ struct DeviceSignals: Hashable, Sendable {
         netbiosName: String? = nil,
         workgroup: String? = nil,
         serviceTitle: String? = nil,
+        probeDescription: String? = nil,
         ttl: Int? = nil,
         openPorts: Set<Int> = [],
         scannedPorts: Set<Int> = [],
@@ -53,6 +56,7 @@ struct DeviceSignals: Hashable, Sendable {
         self.netbiosName = netbiosName
         self.workgroup = workgroup
         self.serviceTitle = serviceTitle
+        self.probeDescription = probeDescription
         self.ttl = ttl
         self.openPorts = openPorts
         self.scannedPorts = scannedPorts
@@ -68,7 +72,7 @@ struct DeviceSignals: Hashable, Sendable {
 
         // The NetBIOS name is a hostname too, and often the only one a Windows box offers.
         self.hostnameTokens = Tokenizer.tokens(hostname).union(Tokenizer.tokens(netbiosName))
-        self.descriptionText = [vendor, serviceTitle, netbiosName]
+        self.descriptionText = [vendor, serviceTitle, netbiosName, probeDescription]
             .compactMap { $0?.lowercased() }
             .joined(separator: " ")
     }
@@ -94,6 +98,7 @@ extension DeviceSignals {
             netbiosName: host.netbiosName,
             workgroup: host.workgroup,
             serviceTitle: host.serviceTitle,
+            probeDescription: host.probeDescription,
             ttl: host.ttl,
             openPorts: Set(host.openPorts),
             scannedPorts: Set(host.scannedPorts),

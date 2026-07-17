@@ -18,6 +18,14 @@ struct ScanOptions: Sendable, Hashable {
     /// Ports probed on every *alive* host to identify it. Empty skips the phase entirely.
     var fingerprintPorts: [Int] = []
 
+    /// Ask UPnP devices what they are (unicast M-SEARCH), and SNMP agents for sysDescr.
+    ///
+    /// Deep only, and each is additionally gated on its port having answered the fingerprint round
+    /// — so a Standard scan sends no SSDP and no SNMP at all, and a Deep scan only talks to hosts
+    /// that already said they were listening.
+    var includeSSDP = false
+    var includeSNMP = false
+
     /// Full port scan with banner fetch after discovery finishes.
     var autoPortScan = false
     var autoBanners = false
@@ -40,6 +48,8 @@ extension ScanProfile {
         case .deep:
             ScanOptions(
                 fingerprintPorts: PortScanner.fingerprintPorts,
+                includeSSDP: true,
+                includeSNMP: true,
                 autoPortScan: true,
                 autoBanners: true
             )

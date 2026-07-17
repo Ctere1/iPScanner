@@ -37,7 +37,7 @@ enum BannerProbe {
         request.setValue("text/html,*/*;q=0.5", forHTTPHeaderField: "Accept")
         request.setValue("iPScanner/1.0", forHTTPHeaderField: "User-Agent")
 
-        let session = httpSession
+        let session = permissiveSession
         do {
             let (data, _) = try await session.data(for: request)
             let body = String(data: data.prefix(64 * 1024), encoding: .utf8) ?? ""
@@ -47,7 +47,10 @@ enum BannerProbe {
         }
     }
 
-    private static let httpSession: URLSession = {
+    /// Shared with SSDPProbe, which fetches UPnP description documents from the same kind of host.
+    /// A second session would mean a second copy of the trust-all delegate — the one piece of this
+    /// codebase where a duplicate would be a security decision made twice.
+    static let permissiveSession: URLSession = {
         let config = URLSessionConfiguration.ephemeral
         config.timeoutIntervalForRequest = 1.5
         config.timeoutIntervalForResource = 2.0
