@@ -121,6 +121,7 @@ struct ContentView: View {
                         label: inspectedHost.flatMap { controller.label(for: $0) },
                         anchor: inspectedHost.map { controller.anchor(for: $0) },
                         services: inspectedHost.map { mdns.services(for: $0.ip) } ?? [],
+                        resolvedName: inspectedHost.flatMap { resolvedName(for: $0) },
                         onLabelChange: { newValue in
                             if let h = inspectedHost {
                                 controller.setLabel(newValue, for: h)
@@ -251,6 +252,17 @@ struct ContentView: View {
 
     private func host(forID id: Host.ID) -> Host? {
         controller.hosts.first { $0.id == id }
+    }
+
+    /// Reverse DNS first, then the names the scan picked up elsewhere. Most LANs have no PTR
+    /// records, so without the fallbacks this column reads "—" for every host even when the device
+    /// is announcing its name over Bonjour.
+    private func resolvedName(for host: Host) -> ResolvedName? {
+        ResolvedName.best(
+            dns: host.hostname,
+            mdns: mdns.name(for: host.ip),
+            netbios: host.netbiosName
+        )
     }
 
     // MARK: - Toolbar
@@ -867,13 +879,25 @@ struct ContentView: View {
 
                 if showColHostname {
                     TableColumn("Hostname") { host in
-                        if let h = host.hostname {
-                            Text(highlighted(h))
+                        if let name = resolvedName(for: host) {
+                            HStack(spacing: 4) {
+                                Text(highlighted(name.value))
+                                    .lineLimit(1)
+                                if let badge = name.source.badge {
+                                    Text(badge)
+                                        .font(.system(size: 9, weight: .medium))
+                                        .padding(.horizontal, 4)
+                                        .padding(.vertical, 1)
+                                        .background(Color.secondary.opacity(0.15), in: Capsule())
+                                        .foregroundStyle(.secondary)
+                                        .help(name.source.explanation)
+                                }
+                            }
                         } else {
                             Text("—").foregroundStyle(.secondary)
                         }
                     }
-                    .width(min: 110, ideal: 170)
+                    .width(min: 110, ideal: 190)
                 }
 
                 if showColMAC {

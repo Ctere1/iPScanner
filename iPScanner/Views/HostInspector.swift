@@ -6,6 +6,8 @@ struct HostInspector: View {
     let label: String?
     let anchor: String?
     let services: [MDNSDiscovery.ServiceRecord]
+    /// Best name across DNS/mDNS/NetBIOS. Passed in because only ContentView holds the mDNS index.
+    let resolvedName: ResolvedName?
     let onLabelChange: (String?) -> Void
 
     @State private var labelText: String = ""
@@ -135,7 +137,11 @@ struct HostInspector: View {
     @ViewBuilder
     private func infoSection(host: Host) -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            infoRow("Hostname", host.hostname)
+            // Names off the wire are worth attributing: a Bonjour name is whatever the device
+            // chose to call itself, which is not the same claim as a PTR record.
+            infoRow("Name", resolvedName.map { name in
+                name.source == .dns ? name.value : "\(name.value) (\(name.source.rawValue))"
+            })
             if let nb = host.netbiosName {
                 infoRow("NetBIOS", nb)
             }
