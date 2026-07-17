@@ -86,19 +86,34 @@ final class ScanController {
     /// saved labels and ranges — the previous init read `UserDefaults.standard` unconditionally.
     init(
         labelStore: LabelStore? = nil,
-        savedRangeStore: SavedRangeStore? = nil
+        savedRangeStore: SavedRangeStore? = nil,
+        scheduler: Scheduling? = nil,
+        makeScanner: (@Sendable (ScanProfile) -> any HostDiscovering)? = nil
     ) {
         // Built here rather than as default arguments: a default argument is evaluated in the
         // caller's isolation, and these are @MainActor.
+        let clock = scheduler ?? TimerScheduler()
         self.labelStore = labelStore ?? LabelStore()
         self.savedRangeStore = savedRangeStore ?? SavedRangeStore()
+        self.scheduler = clock
+        self.rescanScheduler = RescanScheduler(scheduler: clock)
+        self.makeScanner = makeScanner ?? { NetworkScanner(profile: $0) }
     }
+
+    @ObservationIgnored private let scheduler: Scheduling
+
+    /// How a scanner is obtained for a run. Injected so a test can drive the controller from a
+    /// scripted event stream rather than the network — `start()` used to construct a
+    /// `NetworkScanner` inline, which is why none of the scan lifecycle had tests.
+    @ObservationIgnored private let makeScanner: @Sendable (ScanProfile) -> any HostDiscovering
 
     private var scanTask: Task<Void, Never>?
     private var startDate: Date?
-    private var elapsedTimer: Timer?
-    private var rescanTimer: Timer?
-    private(set) var nextRescanAt: Date?
+    private var elapsedWork: ScheduledWork?
+
+    let rescanScheduler: RescanScheduler
+
+    var nextRescanAt: Date? { rescanScheduler.nextRescanAt }
 
     var isScanning: Bool {
         if case .scanning = state { return true }
@@ -211,25 +226,21 @@ final class ScanController {
         cancelPortScan()
         hostStore.removeAll()
         warnings = []
-        cancelRescanTimer()
-        startDate = Date()
+        rescanScheduler.cancel()
+        startDate = scheduler.now
         elapsed = 0
         state = .scanning(scanned: 0, total: addresses.count)
 
-        elapsedTimer?.invalidate()
+        elapsedWork?.cancel()
         // Elapsed renders to one decimal, so a 0.25s period looks identical to 0.1s while cutting
         // wakeups by 60%; the tolerance lets the timer coalesce with other work instead of forcing
         // its own wakeup. Each tick invalidates observers, so the cost is more than the timer itself.
-        let timer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
-            Task { @MainActor in
-                guard let self, let start = self.startDate else { return }
-                self.elapsed = Date().timeIntervalSince(start)
-            }
+        elapsedWork = scheduler.repeating(every: 0.25, tolerance: 0.1) { [weak self] in
+            guard let self, let start = self.startDate else { return }
+            self.elapsed = self.scheduler.now.timeIntervalSince(start)
         }
-        timer.tolerance = 0.1
-        elapsedTimer = timer
 
-        let scanner = NetworkScanner(profile: profile)
+        let scanner = makeScanner(profile)
         let runProfile = profile
         scanTask = Task { [weak self] in
             for await event in scanner.scan(addresses: addresses) {
@@ -255,16 +266,16 @@ final class ScanController {
         scanTask = nil
         // A deep-profile scan chains an auto port scan; without this it survives Stop.
         cancelPortScan()
-        elapsedTimer?.invalidate()
-        elapsedTimer = nil
-        cancelRescanTimer()
+        elapsedWork?.cancel()
+        elapsedWork = nil
+        rescanScheduler.cancel()
         if case .scanning(let s, let t) = state {
             state = .done(scanned: s, total: t)
         }
     }
 
     private func handleRescanIntervalChange() {
-        cancelRescanTimer()
+        rescanScheduler.cancel()
         // If the previous scan already finished and an interval is now set, prime the next tick.
         if case .done = state, rescanInterval.seconds != nil {
             scheduleRescan()
@@ -273,24 +284,12 @@ final class ScanController {
 
     private func scheduleRescan() {
         guard let interval = rescanInterval.seconds else { return }
-        cancelRescanTimer()
-        nextRescanAt = Date().addingTimeInterval(interval)
-        rescanTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: false) { [weak self] _ in
-            Task { @MainActor in
-                guard let self else { return }
-                self.rescanTimer = nil
-                self.nextRescanAt = nil
-                if !self.isScanning, !self.rangeInput.trimmingCharacters(in: .whitespaces).isEmpty {
-                    self.start()
-                }
+        rescanScheduler.schedule(after: interval) { [weak self] in
+            guard let self else { return }
+            if !self.isScanning, !self.rangeInput.trimmingCharacters(in: .whitespaces).isEmpty {
+                self.start()
             }
         }
-    }
-
-    private func cancelRescanTimer() {
-        rescanTimer?.invalidate()
-        rescanTimer = nil
-        nextRescanAt = nil
     }
 
     func runPortScan(ports: [Int], fetchBanners: Bool = false, targetIds: Set<Host.ID>? = nil) {
@@ -457,8 +456,8 @@ final class ScanController {
     func applySnapshot(_ snapshot: ScanSnapshot) {
         stop()
         scanTask = nil
-        elapsedTimer?.invalidate()
-        elapsedTimer = nil
+        elapsedWork?.cancel()
+        elapsedWork = nil
         importedTargets = nil
         rangeInput = snapshot.rangeInput
         let restored = snapshot.hosts.map { rec in
@@ -586,8 +585,8 @@ final class ScanController {
         case .host(let h):
             hostStore.upsert(h)
         case .done:
-            elapsedTimer?.invalidate()
-            elapsedTimer = nil
+            elapsedWork?.cancel()
+            elapsedWork = nil
             if case .scanning(let s, let t) = state {
                 state = .done(scanned: s, total: t)
             } else {

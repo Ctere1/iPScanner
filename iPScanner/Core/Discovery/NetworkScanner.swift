@@ -1,7 +1,19 @@
 import Foundation
 
-protocol NetworkScanning: Sendable {
-    func scan(_ range: ScanRange) -> AsyncStream<ScanEvent>
+/// Discovers hosts, streaming what it learns as it learns it.
+///
+/// Declares `scan(addresses:)` because that is what callers actually call. The protocol this
+/// replaces declared only `scan(_ range:)` — a method neither the GUI nor the CLI used — so it
+/// described an API nobody had, could not stand in for the scanner in a test, and no one ever held
+/// it as an existential. A convenience for the range form is below, where it belongs.
+protocol HostDiscovering: Sendable {
+    func scan(addresses: [String]) -> AsyncStream<ScanEvent>
+}
+
+extension HostDiscovering {
+    func scan(_ range: ScanRange) -> AsyncStream<ScanEvent> {
+        scan(addresses: range.addresses)
+    }
 }
 
 struct DiscoverResult: Sendable, Hashable {
@@ -14,7 +26,7 @@ struct DiscoverResult: Sendable, Hashable {
     var openPorts: [Int] = []
 }
 
-struct NetworkScanner: NetworkScanning {
+struct NetworkScanner: HostDiscovering {
     static let pingConcurrency = 32
     static let enrichConcurrency = 16
     static let pingTimeoutMs = 800
@@ -25,10 +37,6 @@ struct NetworkScanner: NetworkScanning {
 
     init(profile: ScanProfile = .standard) {
         self.profile = profile
-    }
-
-    func scan(_ range: ScanRange) -> AsyncStream<ScanEvent> {
-        scan(addresses: range.addresses)
     }
 
     func scan(addresses: [String]) -> AsyncStream<ScanEvent> {
