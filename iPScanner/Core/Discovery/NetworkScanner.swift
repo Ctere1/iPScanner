@@ -93,7 +93,7 @@ struct NetworkScanner: NetworkScanning {
         }
 
         // --- ARP grace ---
-        try? await Task.sleep(for: .milliseconds(200))
+        try? await Task.sleep(for: .milliseconds(HostEnricher.arpGraceMs))
         let arpTable = await ARPLookup.table()
         if arpTable.isEmpty, !alive.isEmpty {
             continuation.yield(.warning(.arpEmpty))
@@ -105,22 +105,21 @@ struct NetworkScanner: NetworkScanning {
             over: alive,
             limit: Self.enrichConcurrency,
             operation: { entry in
-                let mac = arpTable[entry.ip]
-                let vendor = mac.flatMap { oui.vendor(forMAC: $0) }
-                async let hostname = DNSResolver.reverseLookup(entry.ip)
-                async let netbios: NetBIOSResolver.Result? =
-                    includeNetBIOS ? NetBIOSResolver.resolve(entry.ip) : nil
-                let resolvedHost = await hostname
-                let nb = await netbios
+                let found = await HostEnricher.enrich(
+                    ip: entry.ip,
+                    arpTable: arpTable,
+                    includeNetBIOS: includeNetBIOS,
+                    vendors: oui
+                )
                 return Host(
                     ip: entry.ip,
-                    hostname: resolvedHost,
-                    mac: mac,
-                    vendor: vendor,
+                    hostname: found.hostname,
+                    mac: found.mac,
+                    vendor: found.vendor,
                     rttMs: entry.rtt,
                     ttl: entry.ttl,
-                    netbiosName: nb?.computerName,
-                    workgroup: nb?.workgroup,
+                    netbiosName: found.netbiosName,
+                    workgroup: found.workgroup,
                     openPorts: entry.open,
                     scannedPorts: entry.probed,
                     status: .alive

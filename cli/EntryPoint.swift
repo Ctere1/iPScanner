@@ -164,24 +164,15 @@ struct IPScannerCLI {
         let snapshot = Array(hosts.keys)
         let concurrency = 4
 
-        let portResults: [(String, [Int])] = await withTaskGroup(of: (String, [Int]).self) { group in
-            var iter = snapshot.makeIterator()
-            for _ in 0..<min(concurrency, snapshot.count) {
-                guard let ip = iter.next() else { break }
-                group.addTask { (ip, await PortScanner.probe(ip, ports: ports)) }
-            }
-            var collected: [(String, [Int])] = []
-            while let result = await group.next() {
-                collected.append(result)
-                if let ip = iter.next() {
-                    group.addTask { (ip, await PortScanner.probe(ip, ports: ports)) }
-                }
-            }
-            return collected
+        let portResults: [(String, [Int])] = await windowedMap(snapshot, limit: concurrency) { ip in
+            (ip, await PortScanner.probe(ip, ports: ports))
         }
 
         for (ip, openPorts) in portResults {
-            hosts[ip]?.openPorts = openPorts
+            // Records what was probed, not only what answered — plain assignment left scannedPorts
+            // empty, so the CLI could not tell a host it had probed and found closed from one it
+            // had never looked at. Same rule as the GUI.
+            hosts[ip]?.mergePortResults(probed: ports, open: openPorts)
         }
 
         if fetchBanners {
@@ -191,18 +182,11 @@ struct IPScannerCLI {
             }
             // Windowed like the port phase above; an unbounded group opened a connection to every
             // banner target at once.
-            await withTaskGroup(of: (String, String?).self) { group in
-                var iter = bannerTargets.makeIterator()
-                for _ in 0..<min(concurrency, bannerTargets.count) {
-                    guard let (ip, openPorts) = iter.next() else { break }
-                    group.addTask { (ip, await BannerProbe.fetch(ip, openPorts: openPorts)) }
-                }
-                while let (ip, title) = await group.next() {
-                    if let title { hosts[ip]?.serviceTitle = title }
-                    if let (nextIP, nextPorts) = iter.next() {
-                        group.addTask { (nextIP, await BannerProbe.fetch(nextIP, openPorts: nextPorts)) }
-                    }
-                }
+            let banners: [(String, String?)] = await windowedMap(bannerTargets, limit: concurrency) {
+                (ip, openPorts) in (ip, await BannerProbe.fetch(ip, openPorts: openPorts))
+            }
+            for (ip, title) in banners {
+                if let title { hosts[ip]?.serviceTitle = title }
             }
         }
     }

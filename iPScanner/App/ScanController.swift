@@ -80,9 +80,7 @@ final class ScanController {
     private(set) var diff: SnapshotDiff?
     private var diffBaseline: ScanSnapshot?
     private var portScanTask: Task<Void, Never>?
-    /// Bumped on every start and cancel. A run whose generation is stale has been superseded and
-    /// must not write results or clear the current run's progress flags.
-    private var portScanGeneration: UInt64 = 0
+    private var portScanGeneration = RunGeneration()
 
     /// Stores are injected so a test can construct a controller without touching the real app's
     /// saved labels and ranges — the previous init read `UserDefaults.standard` unconditionally.
@@ -302,15 +300,14 @@ final class ScanController {
         portScanInProgress = true
         portScanProgress = (0, targets.count)
 
-        portScanGeneration &+= 1
-        let generation = portScanGeneration
+        let generation = portScanGeneration.begin()
         portScanTask = Task { [weak self] in
             await self?.executePortScan(
                 targets: targets, ports: ports, fetchBanners: fetchBanners, generation: generation
             )
             await MainActor.run { [weak self] in
                 // A cancelled run must not clear the flags of the run that replaced it.
-                guard let self, self.portScanGeneration == generation else { return }
+                guard let self, self.portScanGeneration.isCurrent(generation) else { return }
                 self.portScanInProgress = false
                 self.portScanTask = nil
             }
@@ -322,7 +319,7 @@ final class ScanController {
         portScanTask = nil
         portScanInProgress = false
         // Retires the in-flight run: its writebacks and completion block become no-ops.
-        portScanGeneration &+= 1
+        portScanGeneration.retire()
     }
 
     private func executePortScan(
@@ -330,33 +327,23 @@ final class ScanController {
     ) async {
         var completed = 0
 
-        await withTaskGroup(of: (Host.ID, String, [Int]).self) { group in
-            var iter = targets.makeIterator()
-            for _ in 0..<min(Self.portScanHostConcurrency, targets.count) {
-                guard let host = iter.next() else { break }
-                let ip = host.ip
-                let id = host.id
-                group.addTask { (id, ip, await PortScanner.probe(ip, ports: ports)) }
+        await withWindowedTaskGroup(
+            over: targets.map { (id: $0.id, ip: $0.ip) },
+            limit: Self.portScanHostConcurrency,
+            operation: { target in
+                (target.id, target.ip, await PortScanner.probe(target.ip, ports: ports))
             }
-            while let (id, ip, openPorts) = await group.next() {
-                if Task.isCancelled || generation != self.portScanGeneration {
-                    group.cancelAll()
-                    break
-                }
-                self.hostStore.update(id: id, ip: ip) {
-                    $0.mergePortResults(probed: ports, open: openPorts)
-                }
-                completed += 1
-                self.portScanProgress = (completed, targets.count)
-                if let next = iter.next() {
-                    let nextIP = next.ip
-                    let nextId = next.id
-                    group.addTask { (nextId, nextIP, await PortScanner.probe(nextIP, ports: ports)) }
-                }
+        ) { id, ip, openPorts in
+            guard self.portScanGeneration.isCurrent(generation) else { return false }
+            self.hostStore.update(id: id, ip: ip) {
+                $0.mergePortResults(probed: ports, open: openPorts)
             }
+            completed += 1
+            self.portScanProgress = (completed, targets.count)
+            return true
         }
 
-        if Task.isCancelled || generation != portScanGeneration { return }
+        if Task.isCancelled || !portScanGeneration.isCurrent(generation) { return }
         guard fetchBanners else { return }
 
         // Banners follow the hosts this run actually port-scanned. Deriving them from `selection`
@@ -369,18 +356,17 @@ final class ScanController {
         }
 
         var failures = 0
-        await withTaskGroup(of: (Host.ID, String, String?).self) { group in
-            for (id, ip, ports) in bannerTargets {
-                group.addTask { (id, ip, await BannerProbe.fetch(ip, openPorts: ports)) }
+        await withWindowedTaskGroup(
+            over: bannerTargets,
+            limit: Self.portScanHostConcurrency,
+            operation: { target in
+                (target.0, target.1, await BannerProbe.fetch(target.1, openPorts: target.2))
             }
-            for await (id, ip, title) in group {
-                if Task.isCancelled || generation != self.portScanGeneration {
-                    group.cancelAll()
-                    break
-                }
-                guard let title else { failures += 1; continue }
-                self.hostStore.update(id: id, ip: ip) { $0.serviceTitle = title }
-            }
+        ) { id, ip, title in
+            guard self.portScanGeneration.isCurrent(generation) else { return false }
+            guard let title else { failures += 1; return true }
+            self.hostStore.update(id: id, ip: ip) { $0.serviceTitle = title }
+            return true
         }
         if failures > 0 {
             mergeWarning(.bannerFetchFailures(count: failures))
@@ -515,17 +501,11 @@ final class ScanController {
         guard !targets.isEmpty else { return }
         let arpTable = await ARPLookup.table()
 
-        await withTaskGroup(of: Void.self) { group in
-            var iter = targets.makeIterator()
-            for _ in 0..<min(Self.refreshConcurrency, targets.count) {
-                guard let id = iter.next() else { break }
-                group.addTask { await self.refreshHost(id, sharedARPTable: arpTable) }
-            }
-            while await group.next() != nil {
-                guard let next = iter.next() else { continue }
-                group.addTask { await self.refreshHost(next, sharedARPTable: arpTable) }
-            }
-        }
+        await withWindowedTaskGroup(
+            over: targets,
+            limit: Self.refreshConcurrency,
+            operation: { id in await self.refreshHost(id, sharedARPTable: arpTable) }
+        ) { _ in true }
     }
 
     func refreshHost(_ id: Host.ID, sharedARPTable: [String: String]? = nil) async {
@@ -545,7 +525,7 @@ final class ScanController {
             return
         }
 
-        try? await Task.sleep(for: .milliseconds(200))
+        try? await Task.sleep(for: .milliseconds(HostEnricher.arpGraceMs))
         // Callers refreshing several hosts pass one shared table; each `table()` call is its own
         // `/usr/sbin/arp` process, so a bulk refresh would otherwise spawn one per host.
         let arpTable: [String: String]
@@ -554,23 +534,21 @@ final class ScanController {
         } else {
             arpTable = await ARPLookup.table()
         }
-        async let hostnameTask = DNSResolver.reverseLookup(ip)
-        async let netbiosTask: NetBIOSResolver.Result? =
-            profile.includeNetBIOS ? NetBIOSResolver.resolve(ip) : nil
-        let hostname = await hostnameTask
-        let netbios = await netbiosTask
-        let mac = arpTable[ip]
-        let vendor = mac.flatMap { OUILookup.shared.vendor(forMAC: $0) }
+        let found = await HostEnricher.enrich(
+            ip: ip,
+            arpTable: arpTable,
+            includeNetBIOS: profile.includeNetBIOS
+        )
 
         hostStore.update(id: id, ip: ip) {
             $0.status = .alive
             $0.rttMs = result.rttMs
             $0.ttl = result.ttl
-            if let h = hostname { $0.hostname = h }
-            if let m = mac { $0.mac = m }
-            if let v = vendor { $0.vendor = v }
-            if let n = netbios?.computerName { $0.netbiosName = n }
-            if let w = netbios?.workgroup { $0.workgroup = w }
+            if let h = found.hostname { $0.hostname = h }
+            if let m = found.mac { $0.mac = m }
+            if let v = found.vendor { $0.vendor = v }
+            if let n = found.netbiosName { $0.netbiosName = n }
+            if let w = found.workgroup { $0.workgroup = w }
         }
     }
 
