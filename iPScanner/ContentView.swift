@@ -255,15 +255,161 @@ struct ContentView: View {
 
     // MARK: - Toolbar
 
+    /// The toolbar's controls need roughly 900pt laid out in one row, but the detail pane is far
+    /// narrower than that once the sidebar and inspector take their share. Every control used to
+    /// sit in a single HStack with fixed widths and `.fixedSize()`, which refuses to shrink — so
+    /// the row overflowed its bounds and the controls drew on top of each other.
+    ///
+    /// `ViewThatFits` picks the widest layout that actually fits: the full row when there is room,
+    /// otherwise a compact row that keeps the scan controls visible and folds everything secondary
+    /// into an overflow menu.
     @ViewBuilder
     private var toolbar: some View {
+        ViewThatFits(in: .horizontal) {
+            toolbarRow(compact: false)
+            toolbarRow(compact: true)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+    }
+
+    @ViewBuilder
+    private func toolbarRow(compact: Bool) -> some View {
+        HStack(spacing: 10) {
+            targetControls(compact: compact)
+            scanControls(compact: compact)
+            if !compact {
+                actionControls
+            }
+            Spacer(minLength: 8)
+            if compact {
+                searchField
+                overflowMenu
+            } else {
+                viewControls
+            }
+
+            // Hidden ⌘C handler — receives the keyboard shortcut without taking visual space.
+            // Lives here rather than in `viewControls` so the shortcut survives the compact layout.
+            Button("") { copySelectedIPs() }
+                .keyboardShortcut("c", modifiers: [.command])
+                .frame(width: 0, height: 0)
+                .opacity(0)
+                .accessibilityHidden(true)
+        }
+    }
+
+    /// Secondary controls, folded into one menu when the row is too narrow to show them inline.
+    @ViewBuilder
+    private var overflowMenu: some View {
+        Menu {
+            Picker("Profile", selection: profileBinding) {
+                ForEach(ScanProfile.allCases) { p in
+                    Text(p.label).tag(p)
+                }
+            }
+            .pickerStyle(.inline)
+            .disabled(controller.isScanning)
+
+            Picker("Auto-rescan", selection: rescanBinding) {
+                ForEach(RescanInterval.allCases) { i in
+                    Text(i.menuLabel).tag(i)
+                }
+            }
+            .pickerStyle(.inline)
+
+            if !controller.hosts.isEmpty {
+                Divider()
+                Button("Port Scan…") {
+                    portError = nil
+                    showingPortScan = true
+                }
+                .disabled(controller.selection.isEmpty || controller.portScanInProgress || controller.isScanning)
+
+                Menu("Export") {
+                    Button("Save as CSV…") { saveCSV() }
+                    Button("Save as JSON…") { saveJSON() }
+                    Button("Save as IP:Port List…") { saveIPPort() }
+                    Button("Save as Text Report…") { saveTextReport() }
+                    Divider()
+                    Button("Copy to Clipboard (CSV)") { copyCSV() }
+                    Button("Copy to Clipboard (JSON)") { copyJSON() }
+                    Button("Copy to Clipboard (IP:Port)") { copyIPPort() }
+                    Button("Copy to Clipboard (Text Report)") { copyTextReport() }
+                }
+
+                Divider()
+                Toggle("Has open ports", isOn: $controller.filterHasOpenPorts)
+                Toggle("Has label", isOn: $controller.filterHasLabel)
+                Toggle("Has vendor", isOn: $controller.filterHasVendor)
+                Toggle("Identified device type", isOn: $controller.filterIdentifiedDevice)
+                Toggle("Dead hosts", isOn: $controller.showDeadHosts)
+                if controller.hasActiveScopeFilters {
+                    Button("Clear filters") { controller.clearScopeFilters() }
+                }
+
+                Menu("Columns") {
+                    Toggle("Label", isOn: $showColLabel)
+                    Toggle("Hostname", isOn: $showColHostname)
+                    Toggle("MAC", isOn: $showColMAC)
+                    Toggle("Vendor", isOn: $showColVendor)
+                    Toggle("Title", isOn: $showColTitle)
+                    Toggle("RTT", isOn: $showColRTT)
+                    Toggle("TTL", isOn: $showColTTL)
+                    Toggle("Ports", isOn: $showColPorts)
+                }
+            }
+
+            Divider()
+            Menu("Interface Subnet") {
+                let interfaces = NetworkInterface.scannableInterfaces()
+                if interfaces.isEmpty {
+                    Text("No active interfaces")
+                } else {
+                    ForEach(interfaces, id: \.name) { iface in
+                        Button("\(iface.name) — \(iface.ipv4)/\(iface.netmaskBits)") {
+                            if let subnet = NetworkInterface.subnet(from: iface) {
+                                controller.rangeInput = subnet
+                            }
+                        }
+                    }
+                }
+            }
+            Button("Subnet Calculator…") {
+                if subnetCalcInput.isEmpty { subnetCalcInput = controller.rangeInput }
+                showingSubnetCalc.toggle()
+            }
+            Button("Import Targets…") { openTargetFile() }
+                .disabled(controller.isScanning)
+        } label: {
+            Image(systemName: "ellipsis.circle")
+        }
+        .menuStyle(.borderlessButton)
+        .fixedSize()
+        .help("More controls")
+        .accessibilityLabel("More controls")
+    }
+
+    @ViewBuilder
+    private var searchField: some View {
+        if !controller.hosts.isEmpty {
+            TextField("", text: $controller.searchQuery, prompt: Text("Search…"))
+                .textFieldStyle(.roundedBorder)
+                .frame(minWidth: 90, maxWidth: 200)
+                .focused($searchFieldFocused)
+        }
+    }
+
+    @ViewBuilder
+    private func targetControls(compact: Bool) -> some View {
         HStack(spacing: 10) {
             if let imported = controller.importedTargets {
                 importedChip(imported)
             } else {
                 TextField("10.0.0.0/24, 192.168.1.0/24, 172.16.5.50-172.16.5.100", text: $controller.rangeInput)
                     .textFieldStyle(.roundedBorder)
-                    .frame(maxWidth: 380)
+                    // Allowed to shrink: it is the one control that can give width back to the row.
+                    .frame(minWidth: 130, maxWidth: 380)
                     .onSubmit { if !controller.isScanning { controller.start() } }
 
                 Button {
@@ -278,16 +424,19 @@ struct ContentView: View {
                 .accessibilityLabel(controller.isCurrentRangeSaved ? "Remove from saved" : "Save range")
             }
 
-            Button {
-                openTargetFile()
-            } label: {
-                Image(systemName: "doc.badge.arrow.up")
-                    .foregroundStyle(.secondary)
+            // These three are reachable from the overflow menu in the compact row.
+            if !compact {
+                Button {
+                    openTargetFile()
+                } label: {
+                    Image(systemName: "doc.badge.arrow.up")
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .help("Import targets from .txt or .csv")
+                .accessibilityLabel("Import targets")
+                .disabled(controller.isScanning)
             }
-            .buttonStyle(.plain)
-            .help("Import targets from .txt or .csv")
-            .accessibilityLabel("Import targets")
-            .disabled(controller.isScanning)
 
             Button {
                 if subnetCalcInput.isEmpty {
@@ -301,11 +450,16 @@ struct ContentView: View {
             .buttonStyle(.plain)
             .help("Subnet calculator")
             .accessibilityLabel("Subnet calculator")
+            // Anchors the popover in both layouts; hidden rather than removed when compact so the
+            // overflow menu's "Subnet Calculator…" item still has something to attach to.
+            .frame(width: compact ? 0 : nil)
+            .opacity(compact ? 0 : 1)
             .popover(isPresented: $showingSubnetCalc, arrowEdge: .bottom) {
                 subnetCalcPopover
             }
 
-            Menu {
+            if !compact {
+                Menu {
                 let interfaces = NetworkInterface.scannableInterfaces()
                 if interfaces.isEmpty {
                     Text("No active interfaces").foregroundStyle(.secondary)
@@ -324,11 +478,17 @@ struct ContentView: View {
                 Image(systemName: "network")
                     .foregroundStyle(.secondary)
             }
-            .menuStyle(.borderlessButton)
-            .fixedSize()
-            .help("Pick interface subnet")
-            .accessibilityLabel("Pick interface subnet")
+                .menuStyle(.borderlessButton)
+                .fixedSize()
+                .help("Pick interface subnet")
+                .accessibilityLabel("Pick interface subnet")
+            }
+        }
+    }
 
+    @ViewBuilder
+    private func scanControls(compact: Bool) -> some View {
+        HStack(spacing: 10) {
             if controller.isScanning {
                 Button("Stop", systemImage: "stop.fill") { controller.stop() }
                     .buttonStyle(.borderedProminent)
@@ -343,17 +503,34 @@ struct ContentView: View {
                     .help("Start scan (⌘R)")
             }
 
-            Picker("", selection: profileBinding) {
-                ForEach(ScanProfile.allCases) { p in
-                    Text(p.label).tag(p)
+            // The segmented picker cannot shrink below its labels; in the compact row the same
+            // choice lives in the overflow menu instead.
+            if !compact {
+                Picker("", selection: profileBinding) {
+                    ForEach(ScanProfile.allCases) { p in
+                        Text(p.label).tag(p)
+                    }
                 }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .frame(width: 220)
+                .help(profileBinding.wrappedValue.description)
+                .disabled(controller.isScanning)
             }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .frame(width: 220)
-            .help(profileBinding.wrappedValue.description)
-            .disabled(controller.isScanning)
 
+            rescanMenu
+
+            if case .scanning(let scanned, let total) = controller.state {
+                ProgressView(value: Double(scanned), total: Double(max(total, 1)))
+                    .progressViewStyle(.linear)
+                    .frame(minWidth: 60, maxWidth: 160)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var rescanMenu: some View {
+        Group {
             Menu {
                 Picker("Auto-rescan", selection: rescanBinding) {
                     ForEach(RescanInterval.allCases) { i in
@@ -378,13 +555,12 @@ struct ContentView: View {
             .fixedSize()
             .help("Auto-rescan interval")
             .accessibilityLabel("Auto-rescan interval")
+        }
+    }
 
-            if case .scanning(let scanned, let total) = controller.state {
-                ProgressView(value: Double(scanned), total: Double(max(total, 1)))
-                    .progressViewStyle(.linear)
-                    .frame(width: 160)
-            }
-
+    @ViewBuilder
+    private var actionControls: some View {
+        HStack(spacing: 10) {
             if !controller.hosts.isEmpty {
                 Button {
                     portError = nil
@@ -405,8 +581,9 @@ struct ContentView: View {
                         total: Double(max(controller.portScanProgress.total, 1))
                     )
                     .progressViewStyle(.linear)
-                    .frame(width: 100)
+                    .frame(minWidth: 50, maxWidth: 100)
                     Text("\(controller.portScanProgress.scanned) / \(controller.portScanProgress.total)")
+                        .lineLimit(1)
                         .font(.caption)
                         .monospacedDigit()
                         .foregroundStyle(.secondary)
@@ -437,13 +614,16 @@ struct ContentView: View {
                 .menuStyle(.borderlessButton)
                 .fixedSize()
             }
+        }
+    }
 
-            Spacer()
-
+    @ViewBuilder
+    private var viewControls: some View {
+        HStack(spacing: 10) {
             if !controller.hosts.isEmpty {
                 TextField("", text: $controller.searchQuery, prompt: Text("Search…"))
                     .textFieldStyle(.roundedBorder)
-                    .frame(maxWidth: 200)
+                    .frame(minWidth: 90, maxWidth: 200)
                     .focused($searchFieldFocused)
 
                 Menu {
@@ -469,14 +649,8 @@ struct ContentView: View {
                 Toggle("Dead hosts", isOn: $controller.showDeadHosts)
                     .toggleStyle(.checkbox)
                     .controlSize(.small)
+                    .fixedSize()
                     .help("Show unresponsive IPs")
-
-                // Hidden ⌘C handler — receives keyboard shortcut without taking visual space.
-                Button("") { copySelectedIPs() }
-                    .keyboardShortcut("c", modifiers: [.command])
-                    .frame(width: 0, height: 0)
-                    .opacity(0)
-                    .accessibilityHidden(true)
 
                 Menu {
                     Toggle("Label", isOn: $showColLabel)
@@ -566,11 +740,14 @@ struct ContentView: View {
 
     @ViewBuilder
     private func subnetRow(_ key: String, _ value: String) -> some View {
-        HStack(spacing: 8) {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
             Text(key)
                 .font(.caption)
                 .foregroundStyle(.secondary)
-                .frame(width: 80, alignment: .leading)
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .frame(minWidth: 80, alignment: .leading)
+                .layoutPriority(1)
             Text(value)
                 .textSelection(.enabled)
             Spacer(minLength: 0)

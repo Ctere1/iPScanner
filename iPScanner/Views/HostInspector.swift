@@ -164,10 +164,15 @@ struct HostInspector: View {
     @ViewBuilder
     private func infoRow(_ key: String, _ value: String?, monospaced: Bool = false, secondary: Bool = false) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
+            // A hard `width: 80` let a longer key ("RTT (initial)") overflow its frame and draw
+            // over the value. Give the column a floor, not a ceiling, and let it truncate.
             Text(key)
                 .font(.caption)
                 .foregroundStyle(.secondary)
-                .frame(width: 80, alignment: .leading)
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .frame(minWidth: 80, alignment: .leading)
+                .layoutPriority(1)
             Group {
                 if let v = value, !v.isEmpty {
                     Text(v)
