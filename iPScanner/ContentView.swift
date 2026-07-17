@@ -618,12 +618,9 @@ struct ContentView: View {
             if density == .full || density == .compact {
                 rescanMenu
             }
-
-            if case .scanning(let scanned, let total, _) = controller.state {
-                ProgressView(value: Double(scanned), total: Double(max(total, 1)))
-                    .progressViewStyle(.linear)
-                    .frame(minWidth: density == .full || density == .compact ? 60 : 40, maxWidth: 160)
-            }
+            // No progress bar. It lived here telling the same story as the status bar's
+            // "Fingerprinting 45 of 254", from the one row that has to give something up at every
+            // width below ~900pt. It is in the status bar now, beside the words it illustrates.
         }
     }
 

@@ -107,6 +107,17 @@ struct StatusBar: View {
                 // and the fingerprint pass is the longest of them.
                 Text("\(phase.label) \(scanned) of \(total)")
                     .monospacedDigit()
+                // Next to the sentence it illustrates. This was a second bar up in the toolbar,
+                // telling the same story from the row that could least afford the 60-160pt: the
+                // words were already down here, so the proportion belongs here too, and the toolbar
+                // gets the width back at every density.
+                //
+                // Fixed width, not flexible. It stands beside numbers that change on every tick, and
+                // a bar that resized as they grew would read as part of the churn rather than as the
+                // measure of it.
+                ProgressView(value: Double(scanned), total: Double(max(total, 1)))
+                    .progressViewStyle(.linear)
+                    .frame(width: 120)
                 Text("•").foregroundStyle(.secondary)
                 Text("\(controller.aliveCount) alive").foregroundStyle(.green)
             case .done(let scanned, let total):
