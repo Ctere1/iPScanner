@@ -37,24 +37,40 @@ final class ScanController {
     var labels: [String: String] { labelStore.labels }
     var savedRanges: [SavedRange] { savedRangeStore.ranges }
 
-    var showDeadHosts: Bool = false
-    var filterHasOpenPorts: Bool = false
-    var filterHasLabel: Bool = false
-    var filterHasVendor: Bool = false
-    var filterIdentifiedDevice: Bool = false
+    /// The filter rules live in `HostFilter`; these stay as the names the views bind to.
+    var filter = HostFilter()
 
-    var hasActiveScopeFilters: Bool {
-        filterHasOpenPorts || filterHasLabel || filterHasVendor || filterIdentifiedDevice
+    var showDeadHosts: Bool {
+        get { filter.showDead }
+        set { filter.showDead = newValue }
+    }
+    var filterHasOpenPorts: Bool {
+        get { filter.hasOpenPorts }
+        set { filter.hasOpenPorts = newValue }
+    }
+    var filterHasLabel: Bool {
+        get { filter.hasLabel }
+        set { filter.hasLabel = newValue }
+    }
+    var filterHasVendor: Bool {
+        get { filter.hasVendor }
+        set { filter.hasVendor = newValue }
+    }
+    var filterIdentifiedDevice: Bool {
+        get { filter.identifiedDevice }
+        set { filter.identifiedDevice = newValue }
     }
 
-    func clearScopeFilters() {
-        filterHasOpenPorts = false
-        filterHasLabel = false
-        filterHasVendor = false
-        filterIdentifiedDevice = false
-    }
+    var hasActiveScopeFilters: Bool { filter.hasActiveScopeFilters }
 
-    private(set) var hosts: [Host] = []
+    func clearScopeFilters() { filter.clearScopeFilters() }
+
+    /// Owns the rows and the IP index. A struct held as a stored property, so mutating it still
+    /// notifies observers while keeping the index rules testable without a UI.
+    private(set) var hostStore = HostStore()
+
+    var hosts: [Host] { hostStore.hosts }
+
     private(set) var state: State = .idle
     private(set) var elapsed: TimeInterval = 0
     private(set) var lastError: String?
@@ -80,10 +96,6 @@ final class ScanController {
         self.savedRangeStore = savedRangeStore ?? SavedRangeStore()
     }
 
-    /// IP → position in `hosts`. Enrichment merges one event per host per phase, so resolving the
-    /// row by index keeps that path O(1); a `firstIndex(where:)` scan makes it O(n) per event.
-    /// Must be rebuilt whenever `hosts` is reordered or has elements removed.
-    private var indexByIp: [String: Int] = [:]
     private var scanTask: Task<Void, Never>?
     private var startDate: Date?
     private var elapsedTimer: Timer?
@@ -95,55 +107,12 @@ final class ScanController {
         return false
     }
 
-    var aliveCount: Int { hosts.filter { $0.status == .alive }.count }
-
-    // MARK: - Host index
-
-    private func rebuildIndex() {
-        indexByIp = Dictionary(
-            hosts.enumerated().map { ($0.element.ip, $0.offset) },
-            uniquingKeysWith: { _, latest in latest }
-        )
-    }
-
-    /// Position of `id` in `hosts`, or nil if it is gone. The id check guards against writing to a
-    /// different host that has since taken the same IP (restore, delete, re-add).
-    private func index(of id: Host.ID, ip: String) -> Int? {
-        guard let idx = indexByIp[ip], hosts.indices.contains(idx), hosts[idx].id == id else {
-            return nil
-        }
-        return idx
-    }
+    var aliveCount: Int { hostStore.aliveCount }
 
     var filteredHosts: [Host] {
-        var visible = showDeadHosts ? hosts : hosts.filter { $0.status != .dead }
-        if filterHasOpenPorts {
-            visible = visible.filter { !$0.openPorts.isEmpty }
-        }
-        if filterHasLabel {
-            visible = visible.filter { label(for: $0) != nil }
-        }
-        if filterHasVendor {
-            visible = visible.filter { ($0.vendor?.isEmpty == false) }
-        }
-        if filterIdentifiedDevice {
-            visible = visible.filter { DeviceClassifier.classify($0) != .unknown }
-        }
-        let rows: [Host]
-        if searchQuery.isEmpty {
-            rows = visible
-        } else {
-            let q = searchQuery.lowercased()
-            rows = visible.filter { h in
-                h.ip.lowercased().contains(q)
-                    || (h.hostname?.lowercased().contains(q) ?? false)
-                    || (h.mac?.lowercased().contains(q) ?? false)
-                    || (h.vendor?.lowercased().contains(q) ?? false)
-                    || (h.serviceTitle?.lowercased().contains(q) ?? false)
-                    || (label(for: h)?.lowercased().contains(q) ?? false)
-            }
-        }
-        return rows.sorted(using: sortOrder)
+        var active = filter
+        active.query = searchQuery
+        return active.apply(to: hosts, label: label(for:), sortOrder: sortOrder)
     }
 
     // MARK: - Labels
@@ -245,8 +214,7 @@ final class ScanController {
         // A deep-profile port scan from the previous run would otherwise keep writing into the
         // host list this line clears, and keep `portScanInProgress` set against the new run.
         cancelPortScan()
-        hosts = []
-        indexByIp = [:]
+        hostStore.removeAll()
         warnings = []
         cancelRescanTimer()
         startDate = Date()
@@ -378,8 +346,8 @@ final class ScanController {
                     group.cancelAll()
                     break
                 }
-                if let idx = self.index(of: id, ip: ip) {
-                    self.hosts[idx].mergePortResults(probed: ports, open: openPorts)
+                self.hostStore.update(id: id, ip: ip) {
+                    $0.mergePortResults(probed: ports, open: openPorts)
                 }
                 completed += 1
                 self.portScanProgress = (completed, targets.count)
@@ -398,7 +366,7 @@ final class ScanController {
         // instead fetched nothing during an auto deep scan (selection is empty then) and could
         // target hosts that were never scanned.
         let bannerTargets: [(Host.ID, String, [Int])] = targets.compactMap { t in
-            guard let idx = index(of: t.id, ip: t.ip) else { return nil }
+            guard let idx = hostStore.index(of: t.id, ip: t.ip) else { return nil }
             let banner = hosts[idx].openPorts.filter { BannerProbe.bannerPorts.contains($0) }
             return banner.isEmpty ? nil : (t.id, t.ip, banner)
         }
@@ -414,9 +382,7 @@ final class ScanController {
                     break
                 }
                 guard let title else { failures += 1; continue }
-                if let idx = self.index(of: id, ip: ip) {
-                    self.hosts[idx].serviceTitle = title
-                }
+                self.hostStore.update(id: id, ip: ip) { $0.serviceTitle = title }
             }
         }
         if failures > 0 {
@@ -528,9 +494,7 @@ final class ScanController {
                 status: .alive
             )
         }
-        hosts = restored
-        // A snapshot file is user-supplied and may repeat an IP; last one wins rather than trapping.
-        rebuildIndex()
+        hostStore.replaceAll(with: restored)
         labelStore.merge(snapshot.labels)
         selection = []
         elapsed = 0
@@ -542,9 +506,7 @@ final class ScanController {
 
     func deleteHosts(_ ids: Set<Host.ID>) {
         guard !ids.isEmpty else { return }
-        hosts.removeAll { ids.contains($0.id) }
-        // Removal shifts every later element, so the whole index is rebuilt, not just the gaps.
-        rebuildIndex()
+        hostStore.remove(ids: ids)
         selection.subtract(ids)
     }
 
@@ -572,17 +534,17 @@ final class ScanController {
     func refreshHost(_ id: Host.ID, sharedARPTable: [String: String]? = nil) async {
         guard let target = hosts.first(where: { $0.id == id }) else { return }
         let ip = target.ip
-        if let idx = index(of: id, ip: ip) {
-            hosts[idx].status = .scanning
-        }
+        hostStore.update(id: id, ip: ip) { $0.status = .scanning }
 
         let result = await NetworkScanner.discover(ip)
-        guard let idx = index(of: id, ip: ip) else { return }
+        guard hostStore.index(of: id, ip: ip) != nil else { return }
 
         guard let result = result else {
-            hosts[idx].status = .dead
-            hosts[idx].rttMs = nil
-            hosts[idx].ttl = nil
+            hostStore.update(id: id, ip: ip) {
+                $0.status = .dead
+                $0.rttMs = nil
+                $0.ttl = nil
+            }
             return
         }
 
@@ -603,15 +565,16 @@ final class ScanController {
         let mac = arpTable[ip]
         let vendor = mac.flatMap { OUILookup.shared.vendor(forMAC: $0) }
 
-        guard let idx2 = index(of: id, ip: ip) else { return }
-        hosts[idx2].status = .alive
-        hosts[idx2].rttMs = result.rttMs
-        hosts[idx2].ttl = result.ttl
-        if let h = hostname { hosts[idx2].hostname = h }
-        if let m = mac { hosts[idx2].mac = m }
-        if let v = vendor { hosts[idx2].vendor = v }
-        if let n = netbios?.computerName { hosts[idx2].netbiosName = n }
-        if let w = netbios?.workgroup { hosts[idx2].workgroup = w }
+        hostStore.update(id: id, ip: ip) {
+            $0.status = .alive
+            $0.rttMs = result.rttMs
+            $0.ttl = result.ttl
+            if let h = hostname { $0.hostname = h }
+            if let m = mac { $0.mac = m }
+            if let v = vendor { $0.vendor = v }
+            if let n = netbios?.computerName { $0.netbiosName = n }
+            if let w = netbios?.workgroup { $0.workgroup = w }
+        }
     }
 
     func runWakeOnLAN(for ids: Set<Host.ID>) async {
@@ -646,12 +609,7 @@ final class ScanController {
         case .warning(let w):
             mergeWarning(w)
         case .host(let h):
-            if let idx = indexByIp[h.ip], hosts.indices.contains(idx) {
-                hosts[idx].merge(h)
-            } else {
-                indexByIp[h.ip] = hosts.count
-                hosts.append(h)
-            }
+            hostStore.upsert(h)
         case .done:
             elapsedTimer?.invalidate()
             elapsedTimer = nil
