@@ -103,12 +103,26 @@ enum ExportService {
         return "iPScanner-\(formatter.string(from: Date())).\(ext)"
     }
 
+    /// Leading characters a spreadsheet treats as the start of a formula. A hostname comes from
+    /// the scanned host's own PTR record, so it is attacker-controlled: `=cmd|'/c calc'!A1`
+    /// contains no comma or quote and would otherwise reach the sheet verbatim and execute on open.
+    private static let formulaTriggers: Set<Character> = ["=", "+", "-", "@", "\t", "\r"]
+
     private static func escape(_ value: String?) -> String {
         guard let v = value, !v.isEmpty else { return "" }
+        // Neutralize the formula by prefixing an apostrophe, then always quote: the apostrophe
+        // itself is only interpreted as a text marker inside a quoted field.
+        if let first = v.first, formulaTriggers.contains(first) {
+            return quoted("'" + v)
+        }
         if v.contains(",") || v.contains("\"") || v.contains("\n") || v.contains("\r") {
-            return "\"" + v.replacingOccurrences(of: "\"", with: "\"\"") + "\""
+            return quoted(v)
         }
         return v
+    }
+
+    private static func quoted(_ v: String) -> String {
+        "\"" + v.replacingOccurrences(of: "\"", with: "\"\"") + "\""
     }
 
     private static func pad(_ s: String, to width: Int) -> String {

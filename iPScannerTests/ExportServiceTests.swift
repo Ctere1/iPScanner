@@ -158,4 +158,38 @@ final class ExportServiceTests: XCTestCase {
         XCTAssertEqual(decoded[0].label, "Router")
         XCTAssertEqual(decoded[0].openPorts, [80, 443])
     }
+
+    // MARK: - CSV formula injection
+
+    /// A hostname comes from the scanned host's own PTR record, so its owner chooses the string.
+    /// This payload contains no comma, quote, or newline, so the RFC 4180 quoting rules leave it
+    /// untouched — it reached the sheet verbatim and Excel executed it on open.
+    func testCSVNeutralizesFormulaInHostname() {
+        let csv = ExportService.csv(rows: [makeRow(hostname: "=cmd|'/c calc'!A1")])
+        XCTAssertTrue(csv.contains("\"'=cmd|'/c calc'!A1\""), "got: \(csv)")
+        XCTAssertFalse(csv.contains(",=cmd"), "formula must not start a cell")
+    }
+
+    func testCSVNeutralizesAllFormulaTriggers() {
+        for trigger in ["=", "+", "-", "@", "\t", "\r"] {
+            let csv = ExportService.csv(rows: [makeRow(vendor: "\(trigger)EVIL()")])
+            XCTAssertTrue(
+                csv.contains("\"'\(trigger)EVIL()\""),
+                "trigger \(trigger.debugDescription) not neutralized: \(csv)"
+            )
+        }
+    }
+
+    func testCSVLeavesOrdinaryValuesUnquoted() {
+        let csv = ExportService.csv(rows: [makeRow(hostname: "router.local", vendor: "Acme")])
+        XCTAssertTrue(csv.contains(",router.local,"))
+        XCTAssertFalse(csv.contains("'router.local"))
+    }
+
+    /// A negative RTT would render as `-2.5`, but numeric columns bypass `escape`, so guard that
+    /// the neutralization did not start quoting ordinary numbers.
+    func testCSVDoesNotQuoteNumericColumns() {
+        let csv = ExportService.csv(rows: [makeRow(rttMs: 2.5, ttl: 64)])
+        XCTAssertTrue(csv.contains(",2.5,64,"))
+    }
 }
