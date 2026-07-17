@@ -342,23 +342,6 @@ struct ContentView: View {
     /// is announcing its name over Bonjour.
     // MARK: - Toolbar
 
-    /// How much of the toolbar is shown inline; the rest moves to the overflow menu.
-    ///
-    /// Laid out flat the controls need roughly 900pt, but the detail pane only gets what is left
-    /// after the sidebar and inspector take theirs. Selecting a host opens the 320pt inspector and
-    /// leaves the table pane around 390pt — so there are three genuinely different widths to
-    /// serve, not two, and a two-step ladder still overflowed the moment a row was selected.
-    ///
-    /// Controls that cannot shrink (a segmented picker, `.fixedSize()` menus) must be *removed* at
-    /// narrow widths rather than squeezed: an HStack that cannot shrink does not clip, it overflows
-    /// and draws over its neighbours.
-    private enum ToolbarDensity {
-        case full     // everything inline
-        case compact  // secondary controls in the overflow menu
-        case tight    // inspector is open: range, scan, progress, search, overflow
-        case minimal  // inspector dragged wide: range, scan, overflow — nothing optional left
-    }
-
     @ViewBuilder
     private var toolbar: some View {
         // ViewThatFits falls back to the *last* child when none fit, so `.minimal` must be the
@@ -461,10 +444,11 @@ struct ContentView: View {
     @ViewBuilder
     private func searchField(_ density: ToolbarDensity) -> some View {
         if !controller.hosts.isEmpty, density != .minimal {
-            TextField("", text: $controller.searchQuery, prompt: Text("Search…"))
-                .textFieldStyle(.roundedBorder)
-                .frame(minWidth: density == .tight ? 70 : 90, maxWidth: 200)
-                .focused($searchFieldFocused)
+            SearchField(
+                controller: controller,
+                minWidth: density == .tight ? 70 : 90,
+                focused: $searchFieldFocused
+            )
         }
     }
 
@@ -681,10 +665,7 @@ struct ContentView: View {
     private var viewControls: some View {
         HStack(spacing: 10) {
             if !controller.hosts.isEmpty {
-                TextField("", text: $controller.searchQuery, prompt: Text("Search…"))
-                    .textFieldStyle(.roundedBorder)
-                    .frame(minWidth: 90, maxWidth: 200)
-                    .focused($searchFieldFocused)
+                SearchField(controller: controller, focused: $searchFieldFocused)
 
                 Menu {
                     FilterMenu(controller: controller)
