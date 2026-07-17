@@ -33,6 +33,7 @@ enum DeviceRules {
         DeviceRule("printer.mdns.pdl", .printer, W.decisive, .mdns("_pdl-datastream._tcp")),
         DeviceRule("printer.mdns.printer", .printer, W.decisive, .mdns("_printer._tcp")),
         DeviceRule("printer.mdns.ipp", .printer, W.strong, .anyMDNS(["_ipp._tcp", "_ipps._tcp"])),
+        DeviceRule("printer.mdns.scanner", .printer, W.strong, .mdns("_scanner._tcp")),
         DeviceRule("printer.port.lpd515", .printer, W.strong, .port(515)),
         // "hewlett" is qualified, not bare. HP Inc. and Hewlett Packard Enterprise have been two
         // different companies since 2015: HP Inc. makes the printers, HPE makes servers and
@@ -91,6 +92,11 @@ enum DeviceRules {
         // lockdownd. No Mac has it; every iPhone and iPad does.
         DeviceRule("apple.port.lockdown", .phone, 5, .port(62078)),
         DeviceRule("apple.mdns.workstation", .mac, W.moderate, .mdns("_workstation._tcp")),
+        // Registered Mac-only services: Apple Remote Desktop, Optical Disk Sharing, an iTunes
+        // library. No Apple TV, HomePod or iPhone publishes these.
+        DeviceRule("apple.mdns.desktop", .mac, W.strong,
+                   .anyMDNS(["_net-assistant._tcp", "_odisk._tcp"])),
+        DeviceRule("apple.mdns.daap", .mac, W.weak, .mdns("_daap._tcp")),
         DeviceRule("apple.mdns.rfb", .mac, W.weak, .mdns("_rfb._tcp")),
         DeviceRule("apple.mdns.companion", .mac, W.hint, .mdns("_companion-link._tcp")),
         DeviceRule("apple.host.iphone", .phone, W.strong, .anyHostToken(["iphone"])),
@@ -122,6 +128,10 @@ enum DeviceRules {
         // `_device-info._tcp`, or its own name. The cost is that an Apple TV which publishes no
         // device-info reads as a Mac or as unknown — which is the right trade, because the
         // alternative mislabels every Mac in the building.
+        // `_appletv._tcp` is registered to the Apple TV and nothing else advertises it — which is
+        // exactly what `_airplay._tcp` is not. This is how an Apple TV is named without dragging
+        // every Mac with AirPlay Receiver on along with it.
+        DeviceRule("appletv.mdns", .appleTV, W.decisive, .anyMDNS(["_appletv._tcp"])),
         DeviceRule("apple.host.appletv", .appleTV, W.strong,
                    .anyHostToken(["appletv", "apple-tv", "atv"])),
         // AirPlay audio. Same ambiguity: a HomePod publishes it, and so does a Mac. A hint only,
@@ -130,7 +140,7 @@ enum DeviceRules {
         DeviceRule("speaker.vendor", .speaker, W.strong,
                    .anyDescrPhrase(["sonos", "bose", "denon", "yamaha", "harman", "marshall"])),
         DeviceRule("speaker.mdns", .speaker, 5,
-                   .anyMDNS(["_sonos._tcp", "_spotify-connect._tcp"])),
+                   .anyMDNS(["_sonos._tcp", "_spotify-connect._tcp", "_ipspeaker._tcp"])),
         // Two vendors are deliberately missing from this list.
         //
         // "philips" bare is under IoT as "philips lighting"/"signify" — the unqualified string used
@@ -239,6 +249,7 @@ enum DeviceRules {
         DeviceRule("win.smb.stack", .windows, W.strong, .all([.port(445), .anyPort([135, 139])])),
         DeviceRule("win.port.msrpc", .windows, W.moderate, .port(135)),
         DeviceRule("win.port.rdp", .windows, W.moderate, .port(3389)),
+        DeviceRule("win.mdns.rdp", .windows, W.moderate, .mdns("_rdp._tcp")),
         DeviceRule("win.netbios.workgroup", .windows, W.moderate, .hasWorkgroup),
         DeviceRule("win.ttl128", .windows, W.weak, .ttlNear(128)),
         DeviceRule("win.host", .windows, W.hint,
@@ -264,7 +275,8 @@ enum DeviceRules {
             "vivotek", "mobotix", "foscam", "annke", "lorex"
         ])),
         DeviceRule("cam.mdns", .camera, W.strong,
-                   .anyMDNS(["_rtsp._tcp", "_onvif._tcp", "_axis-video._tcp"])),
+                   .anyMDNS(["_rtsp._tcp", "_onvif._tcp", "_axis-video._tcp",
+                             "_amba-cam._tcp", "_cctv._tcp"])),
         DeviceRule("cam.descr", .camera, W.strong,
                    .anyDescrPhrase(["onvif", "ipcam", "ip camera", "network camera"])),
         DeviceRule("cam.host", .camera, W.moderate,
@@ -279,6 +291,8 @@ enum DeviceRules {
         DeviceRule("iot.vendor", .iot, 5, .anyDescrPhrase(iotVendors)),
         DeviceRule("iot.mdns.hap", .iot, 5,
                    .anyMDNS(["_hap._tcp", "_homekit._tcp", "_matter._tcp", "_matterc._udp"])),
+        DeviceRule("iot.mdns.homeauto", .iot, W.strong,
+                   .anyMDNS(["_ep._tcp", "_homeauto._tcp"])),
         DeviceRule("iot.mdns.hue", .iot, 5, .mdns("_hue._tcp")),
         DeviceRule("iot.descr", .iot, W.strong, .anyDescrPhrase([
             "esp8266", "esp32", "tasmota", "esphome", "shelly", "hue bridge", "tuya", "smartlife"

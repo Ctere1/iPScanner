@@ -37,22 +37,46 @@
 	<array>
 		<string>_airplay._tcp</string>
 		<string>_raop._tcp</string>
-		<string>_googlecast._tcp</string>
+		<string>_appletv._tcp</string>
 		<string>_companion-link._tcp</string>
+		<string>_device-info._tcp</string>
+		<string>_net-assistant._tcp</string>
+		<string>_odisk._tcp</string>
+		<string>_daap._tcp</string>
+		<string>_workstation._tcp</string>
+		<string>_googlecast._tcp</string>
+		<string>_spotify-connect._tcp</string>
+		<string>_sonos._tcp</string>
+		<string>_ipspeaker._tcp</string>
 		<string>_homekit._tcp</string>
 		<string>_hap._tcp</string>
+		<string>_matter._tcp</string>
+		<string>_matterc._udp</string>
+		<string>_hue._tcp</string>
+		<string>_ep._tcp</string>
+		<string>_homeauto._tcp</string>
 		<string>_smb._tcp</string>
 		<string>_afpovertcp._tcp</string>
 		<string>_nfs._tcp</string>
-		<string>_ssh._tcp</string>
-		<string>_rfb._tcp</string>
-		<string>_workstation._tcp</string>
-		<string>_http._tcp</string>
-		<string>_https._tcp</string>
+		<string>_adisk._tcp</string>
+		<string>_dsm._tcp</string>
+		<string>_synology._tcp</string>
+		<string>_qnap._tcp</string>
 		<string>_ipp._tcp</string>
+		<string>_ipps._tcp</string>
 		<string>_printer._tcp</string>
 		<string>_pdl-datastream._tcp</string>
-		<string>_device-info._tcp</string>
+		<string>_scanner._tcp</string>
+		<string>_rtsp._tcp</string>
+		<string>_onvif._tcp</string>
+		<string>_axis-video._tcp</string>
+		<string>_amba-cam._tcp</string>
+		<string>_cctv._tcp</string>
+		<string>_ssh._tcp</string>
+		<string>_rfb._tcp</string>
+		<string>_rdp._tcp</string>
+		<string>_http._tcp</string>
+		<string>_https._tcp</string>
 	</array>
 	<key>NSHumanReadableCopyright</key>
 	<string>© 2026 Canberk Kılıçarslan. MIT License.</string>

@@ -19,25 +19,68 @@ final class MDNSDiscovery {
         var txt: [String: String] = [:]
     }
 
+    /// The Bonjour services browsed, and what to call each one in the inspector.
+    ///
+    /// Two rules govern this list, and both have been broken:
+    ///
+    /// 1. Every type a classification rule names must appear here, or the rule is decorative — the
+    ///    browser never looks, so the evidence never arrives. Thirteen rules were dead this way.
+    /// 2. Every type here must appear in `NSBonjourServices` in project.yml, or macOS refuses the
+    ///    browse and it fails silently.
+    ///
+    /// `BonjourServiceTypeTests` enforces both, because neither failure announces itself.
+    ///
+    /// Names are from the registry at dns-sd.org/servicetypes.html.
     static let serviceTypes: [(type: String, label: String)] = [
+        // Apple
         ("_airplay._tcp", "AirPlay"),
         ("_raop._tcp", "AirPlay Audio"),
-        ("_googlecast._tcp", "Chromecast"),
+        ("_appletv._tcp", "Apple TV"),
         ("_companion-link._tcp", "Apple Companion"),
+        ("_device-info._tcp", "Device Info"),
+        ("_net-assistant._tcp", "Apple Remote Desktop"),
+        ("_odisk._tcp", "Optical Disk Sharing"),
+        ("_daap._tcp", "iTunes Library"),
+        ("_workstation._tcp", "Workstation"),
+        // Cast
+        ("_googlecast._tcp", "Chromecast"),
+        ("_spotify-connect._tcp", "Spotify Connect"),
+        ("_sonos._tcp", "Sonos"),
+        ("_ipspeaker._tcp", "IP Speaker"),
+        // Home automation
         ("_homekit._tcp", "HomeKit"),
         ("_hap._tcp", "HomeKit"),
+        ("_matter._tcp", "Matter"),
+        ("_matterc._udp", "Matter Commissioning"),
+        ("_hue._tcp", "Philips Hue"),
+        ("_ep._tcp", "Home Automation"),
+        ("_homeauto._tcp", "Home Automation"),
+        // Storage
         ("_smb._tcp", "SMB"),
         ("_afpovertcp._tcp", "AFP"),
         ("_nfs._tcp", "NFS"),
-        ("_ssh._tcp", "SSH"),
-        ("_rfb._tcp", "VNC"),
-        ("_workstation._tcp", "Workstation"),
-        ("_http._tcp", "HTTP"),
-        ("_https._tcp", "HTTPS"),
+        ("_adisk._tcp", "Time Machine"),
+        ("_dsm._tcp", "Synology DSM"),
+        ("_synology._tcp", "Synology"),
+        ("_qnap._tcp", "QNAP"),
+        // Printing
         ("_ipp._tcp", "IPP"),
+        ("_ipps._tcp", "IPP (TLS)"),
         ("_printer._tcp", "Printer"),
         ("_pdl-datastream._tcp", "Print"),
-        ("_device-info._tcp", "Device Info")
+        ("_scanner._tcp", "Scanner"),
+        // Cameras
+        ("_rtsp._tcp", "RTSP"),
+        ("_onvif._tcp", "ONVIF"),
+        ("_axis-video._tcp", "Axis Video"),
+        ("_amba-cam._tcp", "Ambarella Camera"),
+        ("_cctv._tcp", "CCTV"),
+        // Remote access / generic
+        ("_ssh._tcp", "SSH"),
+        ("_rfb._tcp", "VNC"),
+        ("_rdp._tcp", "RDP"),
+        ("_http._tcp", "HTTP"),
+        ("_https._tcp", "HTTPS")
     ]
 
     static let resolveTimeoutMs = 3000

@@ -65,22 +65,47 @@ targets:
         NSBonjourServices:
           - _airplay._tcp
           - _raop._tcp
-          - _googlecast._tcp
+          - _appletv._tcp
           - _companion-link._tcp
+          - _device-info._tcp
+          - _net-assistant._tcp
+          - _odisk._tcp
+          - _daap._tcp
+          - _workstation._tcp
+          - _googlecast._tcp
+          - _spotify-connect._tcp
+          - _sonos._tcp
+          - _ipspeaker._tcp
           - _homekit._tcp
           - _hap._tcp
+          - _matter._tcp
+          - _matterc._udp
+          - _hue._tcp
+          - _ep._tcp
+          - _homeauto._tcp
           - _smb._tcp
           - _afpovertcp._tcp
           - _nfs._tcp
-          - _ssh._tcp
-          - _rfb._tcp
-          - _workstation._tcp
-          - _http._tcp
-          - _https._tcp
+          - _adisk._tcp
+          - _dsm._tcp
+          - _synology._tcp
+          - _qnap._tcp
           - _ipp._tcp
+          - _ipps._tcp
           - _printer._tcp
           - _pdl-datastream._tcp
-          - _device-info._tcp
+          - _scanner._tcp
+          - _rtsp._tcp
+          - _onvif._tcp
+          - _axis-video._tcp
+          - _amba-cam._tcp
+          - _cctv._tcp
+          - _ssh._tcp
+          - _rfb._tcp
+          - _rdp._tcp
+          - _http._tcp
+          - _https._tcp
+
     entitlements:
       path: iPScanner/iPScanner.entitlements
       properties: {}
