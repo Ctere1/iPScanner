@@ -14,6 +14,13 @@ final class BonjourServiceTypeTests: XCTestCase {
         Set(MDNSDiscovery.serviceTypes.map(\.type))
     }
 
+    /// Browsed *or* queried. `_device-info._tcp` answers no browse and has to be asked directly, so
+    /// "the app looks for this type" and "the app browses for this type" stopped being the same
+    /// statement — and the tests below were written when they were.
+    private var reachedFor: Set<String> {
+        browsed.union([MDNSDiscovery.deviceInfoType])
+    }
+
     /// Every service type a rule names must be one the browser actually looks for.
     func testEveryRuleServiceTypeIsBrowsed() {
         var referenced: Set<String> = []
@@ -27,24 +34,35 @@ final class BonjourServiceTypeTests: XCTestCase {
         )
     }
 
-    /// Every type browsed must be declared in NSBonjourServices, or macOS refuses the browse and
-    /// the app silently discovers nothing.
-    func testBrowsedTypesAreDeclaredInInfoPlist() throws {
+    /// Every type the app looks for must be declared in NSBonjourServices, or macOS refuses it and
+    /// the app silently discovers nothing. Queried types need the permission as much as browsed ones.
+    func testTypesLookedForAreDeclaredInInfoPlist() throws {
         let declared = try Self.declaredBonjourServices()
-        let undeclared = browsed.subtracting(declared)
+        let undeclared = reachedFor.subtracting(declared)
         XCTAssertTrue(
             undeclared.isEmpty,
-            "browsed but not in project.yml's NSBonjourServices, so macOS will block them: \(undeclared.sorted())"
+            "looked for but not in project.yml's NSBonjourServices, so macOS will block them: \(undeclared.sorted())"
         )
     }
 
-    /// And the other direction: a declaration for a type nobody browses is dead weight in the
+    /// And the other direction: a declaration for a type nobody looks for is dead weight in the
     /// privacy prompt.
     func testNoStrayDeclarations() throws {
         let declared = try Self.declaredBonjourServices()
         XCTAssertTrue(
-            declared.subtracting(browsed).isEmpty,
-            "declared but never browsed: \(declared.subtracting(browsed).sorted())"
+            declared.subtracting(reachedFor).isEmpty,
+            "declared but never looked for: \(declared.subtracting(reachedFor).sorted())"
+        )
+    }
+
+    /// `_device-info._tcp` must never go back in the browse list.
+    ///
+    /// It sat there for a release, and the browse it answers with silence is what killed all six
+    /// apple.model.* rules. Putting it back would look like a fix and restore the bug.
+    func testDeviceInfoIsQueriedNotBrowsed() {
+        XCTAssertFalse(
+            browsed.contains(MDNSDiscovery.deviceInfoType),
+            "_device-info._tcp answers no PTR query — browsing it finds nothing, forever"
         )
     }
 

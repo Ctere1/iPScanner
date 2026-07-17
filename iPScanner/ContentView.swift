@@ -164,6 +164,13 @@ struct ContentView: View {
         .onChange(of: mdns.servicesByIP) {
             controller.reclassifyHosts()
         }
+        // Device-info is a second, later wave: the TXT query cannot even be sent until a browsable
+        // service has named the host, so `model=Mac17,2` always lands after the services it was
+        // discovered through. Watching only servicesByIP would take the evidence and never re-ask
+        // the question it answers.
+        .onChange(of: mdns.deviceInfoByIP) {
+            controller.reclassifyHosts()
+        }
     }
 
     /// The host detail sheet.

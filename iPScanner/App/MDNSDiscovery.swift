@@ -10,25 +10,49 @@ final class MDNSDiscovery {
         let serviceType: String
         let name: String
         let ip: String
-        /// The service's TXT record, keys lowercased.
+        /// The service's own TXT record, keys lowercased, as handed over with the browse result.
         ///
-        /// `_device-info._tcp` puts the hardware identifier here — `model=MacBookPro18,3`,
-        /// `model=iPhone15,2`, `model=AudioAccessory5,1` — which is the single most precise
-        /// statement a device on a LAN makes about what it is. It arrives with the browse result
-        /// at no extra cost, and used to be thrown away.
+        /// This is per-service metadata — an AirPlay feature bitmask, a printer's queue name. The
+        /// hardware identifier does *not* arrive here; see `deviceInfoType`.
         var txt: [String: String] = [:]
     }
 
+    /// `_device-info._tcp` is queried, never browsed — and that distinction is the whole fix.
+    ///
+    /// It is not a browsable service. Apple devices publish a TXT record at
+    /// `<name>._device-info._tcp.local` carrying `model=Mac17,2` / `model=iPhone15,2` /
+    /// `model=AudioAccessory5,1`, but they answer no PTR query for the type, so browsing for it
+    /// returns nothing, forever, on a network full of Macs.
+    ///
+    /// It was in the browse list, under a comment claiming the TXT "arrives with the browse result
+    /// at no extra cost". It does not arrive at all. Six decisive rules depended on it —
+    /// apple.model.iphone, .ipad, .watch, .appletv, .homepod and .mac — so the single most precise
+    /// statement a device makes about itself never reached the classifier, and every Apple device
+    /// fell back to guesswork: a hostname that happens to contain "macbook", or an OUI vendor lookup
+    /// that a private Wi-Fi address defeats. Macs with neither came out as "—".
+    ///
+    /// Measured rather than reasoned:
+    ///   dns-sd -B _device-info._tcp local              → nothing
+    ///   dns-sd -Q 'Name._device-info._tcp.local' TXT   → model=Mac17,2
+    ///
+    /// It must stay in NSBonjourServices: the query needs the same local-network permission the
+    /// browse did.
+    static let deviceInfoType = "_device-info._tcp"
+
     /// The Bonjour services browsed, and what to call each one in the inspector.
     ///
-    /// Two rules govern this list, and both have been broken:
+    /// Three rules govern this list, and all three have been broken:
     ///
     /// 1. Every type a classification rule names must appear here, or the rule is decorative — the
     ///    browser never looks, so the evidence never arrives. Thirteen rules were dead this way.
     /// 2. Every type here must appear in `NSBonjourServices` in project.yml, or macOS refuses the
     ///    browse and it fails silently.
+    /// 3. Every type here must actually *answer* a browse. `_device-info._tcp` does not, and sat
+    ///    here regardless — see `deviceInfoType`.
     ///
-    /// `BonjourServiceTypeTests` enforces both, because neither failure announces itself.
+    /// `BonjourServiceTypeTests` enforces what it can, because none of these failures announce
+    /// themselves. Note what it still cannot: a rule matching on `.mdnsTXT` names no service type,
+    /// so no test could tell that the TXT behind all six apple.model.* rules never arrived.
     ///
     /// Names are from the registry at dns-sd.org/servicetypes.html.
     static let serviceTypes: [(type: String, label: String)] = [
@@ -37,7 +61,6 @@ final class MDNSDiscovery {
         ("_raop._tcp", "AirPlay Audio"),
         ("_appletv._tcp", "Apple TV"),
         ("_companion-link._tcp", "Apple Companion"),
-        ("_device-info._tcp", "Device Info"),
         ("_net-assistant._tcp", "Apple Remote Desktop"),
         ("_odisk._tcp", "Optical Disk Sharing"),
         ("_daap._tcp", "iTunes Library"),
@@ -86,8 +109,20 @@ final class MDNSDiscovery {
     static let resolveTimeoutMs = 3000
 
     private(set) var servicesByIP: [String: Set<ServiceRecord>] = [:]
+    /// `_device-info._tcp` TXT per IP — the `model=` that names Apple hardware exactly.
+    ///
+    /// Separate from `servicesByIP` because it is not a service anyone advertises: it arrives from a
+    /// direct TXT query, keyed by an instance name some *other* service told us about.
+    private(set) var deviceInfoByIP: [String: [String: String]] = [:]
     private var browsers: [NWBrowser] = []
     private var pendingConnections: [NWConnection] = []
+    /// Instance names already queried for device-info, mapped to the IP that owns them. Doubles as
+    /// the dedupe set: every service a Mac publishes carries the same instance name, so without this
+    /// a host with six services would fire six identical TXT queries.
+    @ObservationIgnored
+    private var deviceInfoIPs: [String: String] = [:]
+    @ObservationIgnored
+    private var deviceInfoQueries: [String: NetService] = [:]
     /// Endpoints already resolved or currently being resolved. `browseResultsChangedHandler`
     /// hands back the whole result set on every change, so without this each new device on the
     /// network re-resolved every service already known — a connection storm that grew with the
@@ -102,6 +137,36 @@ final class MDNSDiscovery {
         let name: String
         let type: String
         let domain: String
+    }
+
+    /// `NetService.delegate` is weak, so this has to be owned here or the query goes silent the
+    /// instant it is set up.
+    ///
+    /// `@ObservationIgnored` because it is plumbing, not state: @Observable would otherwise try to
+    /// generate an init accessor for a lazy property and fail to compile.
+    @ObservationIgnored
+    private lazy var deviceInfoDelegate = DeviceInfoDelegate { [weak self] name, txt in
+        self?.receiveDeviceInfo(name: name, txt: txt)
+    }
+
+    /// Receives `_device-info._tcp` TXT records.
+    ///
+    /// `startMonitoring()` rather than `resolve()`: resolve waits for an SRV record, and
+    /// `_device-info._tcp` has none — there is no port to connect to, the TXT *is* the whole
+    /// service. Monitoring issues the bare TXT query, which is the one thing that works.
+    private final class DeviceInfoDelegate: NSObject, NetServiceDelegate {
+        private let onTXT: @MainActor (String, [String: String]) -> Void
+
+        init(onTXT: @escaping @MainActor (String, [String: String]) -> Void) {
+            self.onTXT = onTXT
+        }
+
+        func netService(_ sender: NetService, didUpdateTXTRecord data: Data) {
+            let name = sender.name
+            let parsed = MDNSDiscovery.parseTXTRecord(data)
+            guard !parsed.isEmpty else { return }
+            Task { @MainActor [onTXT] in onTXT(name, parsed) }
+        }
     }
 
     var isRunning: Bool { !browsers.isEmpty }
@@ -126,7 +191,46 @@ final class MDNSDiscovery {
         browsers.removeAll()
         for c in pendingConnections { c.cancel() }
         pendingConnections.removeAll()
+        for q in deviceInfoQueries.values { q.stop() }
+        deviceInfoQueries.removeAll()
+        deviceInfoIPs.removeAll()
         seenEndpoints.removeAll()
+    }
+
+    // MARK: - Device info
+
+    /// Asks `name` what hardware it is.
+    ///
+    /// Fired once a browsable service has told us both the instance name and the IP behind it —
+    /// `_device-info._tcp` can answer this question but cannot be found, so something else has to
+    /// introduce them first.
+    private func queryDeviceInfo(name: String, ip: String) {
+        guard deviceInfoIPs[name] == nil else { return }
+        deviceInfoIPs[name] = ip
+
+        let service = NetService(domain: "local.", type: Self.deviceInfoType, name: name)
+        service.delegate = deviceInfoDelegate
+        deviceInfoQueries[name] = service
+        service.schedule(in: .main, forMode: .common)
+        service.startMonitoring()
+    }
+
+    private func receiveDeviceInfo(name: String, txt: [String: String]) {
+        guard let ip = deviceInfoIPs[name] else { return }
+        deviceInfoByIP[ip] = txt
+    }
+
+    /// `NetService`'s TXT format is `[String: Data]`; the rules want strings.
+    ///
+    /// nonisolated: the NetService delegate callback arrives outside the main actor, and parsing a
+    /// dictionary touches nothing this class owns.
+    nonisolated static func parseTXTRecord(_ data: Data) -> [String: String] {
+        var out: [String: String] = [:]
+        for (key, value) in NetService.dictionary(fromTXTRecord: data) {
+            guard let string = String(data: value, encoding: .utf8) else { continue }
+            out[key.lowercased()] = string
+        }
+        return out
     }
 
     func services(for ip: String) -> [ServiceRecord] {
@@ -239,15 +343,18 @@ final class MDNSDiscovery {
         Set(services(for: ip).map(\.serviceType))
     }
 
-    /// TXT records for `ip`, merged across its services.
+    /// TXT records for `ip`, merged across its services, with device-info on top.
     ///
-    /// `_device-info._tcp` carries `model=`, which names Apple hardware exactly — the reason the
-    /// TXT record is captured at all.
+    /// Device-info wins the `model` key deliberately. A service's own TXT can carry a `model` too,
+    /// and it describes the *service* — an AirPlay receiver's model, a printer's. Only
+    /// `_device-info._tcp` is the host stating its own hardware, which is what the apple.model.*
+    /// rules are asking about.
     func txt(for ip: String) -> [String: String] {
         var merged: [String: String] = [:]
         for record in services(for: ip) {
             merged.merge(record.txt) { existing, _ in existing }
         }
+        merged.merge(deviceInfoByIP[ip] ?? [:]) { _, deviceInfo in deviceInfo }
         return merged
     }
 
@@ -276,6 +383,9 @@ final class MDNSDiscovery {
 
     private func add(record: ServiceRecord) {
         servicesByIP[record.ip, default: []].insert(record)
+        // Every browsable service is an introduction to the host's device-info record, which cannot
+        // be found any other way. Deduped inside — a Mac publishing six services asks once.
+        queryDeviceInfo(name: record.name, ip: record.ip)
     }
 
     private func dropConnection(_ connection: NWConnection) {

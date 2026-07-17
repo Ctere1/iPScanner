@@ -383,6 +383,45 @@ extension DeviceClassifierTests {
         )
         XCTAssertEqual(DeviceClassifier.live.classify(appleTV).type, .appleTV)
     }
+
+    /// A default-configured modern Mac, as measured rather than imagined.
+    ///
+    /// Every Mac-identifying service the rules name — `_workstation._tcp`, `_rfb._tcp`,
+    /// `_net-assistant._tcp`, `_odisk._tcp`, `_daap._tcp` — is a macOS feature that ships *off*, and
+    /// a real Mac on a real network publishes none of them. A private Wi-Fi address then takes the
+    /// vendor away, and with it `apple.vendor` and `apple.ttl64`. What is left is
+    /// `_companion-link._tcp`, worth one point against a threshold of three.
+    ///
+    /// So this host is "—" unless its device-info TXT arrives — which is the whole reason
+    /// MDNSDiscovery queries for that record instead of browsing for it.
+    func testModernMacWithRandomisedMACAndNoSharingIsStillAMac() {
+        let signals = DeviceSignals(
+            ip: "10.0.0.22",
+            mac: "9a:de:f8:f1:cf:6b",   // private Wi-Fi address: in no OUI registry
+            vendor: nil,
+            hostname: "Cemils-Laptop",  // no "macbook" token to fall back on
+            ttl: 64,
+            mdnsTypes: ["_companion-link._tcp"],
+            mdnsTXT: ["model": "Mac17,2", "osxvers": "25"]
+        )
+        XCTAssertEqual(DeviceClassifier.live.classify(signals).type, .mac)
+    }
+
+    /// The same host without the TXT — the state the app actually shipped in.
+    func testTheSameMacWithoutDeviceInfoIsUnidentifiable() {
+        let signals = DeviceSignals(
+            ip: "10.0.0.22",
+            mac: "9a:de:f8:f1:cf:6b",
+            hostname: "Cemils-Laptop",
+            ttl: 64,
+            mdnsTypes: ["_companion-link._tcp"]
+        )
+        XCTAssertEqual(
+            DeviceClassifier.live.classify(signals).type,
+            .unknown,
+            "if this ever passes as .mac, the device-info query is no longer what is carrying Macs"
+        )
+    }
 }
 
 // MARK: - Administration surface vs identity
