@@ -90,10 +90,18 @@ enum DeviceRules {
                    .anyDescrPhrase(["chromecast", "google cast", "android tv", "fire tv", "roku"])),
         DeviceRule("airplay.mdns", .appleTV, W.strong, .mdns("_airplay._tcp")),
         DeviceRule("airplay.port.7000", .appleTV, W.weak, .port(7000)),
-        // 7000 and 5000 together is AirPlay's pair. Worth naming because 5000 alone reads as
-        // Synology's web UI, and a Mac with AirPlay Receiver on has both — found on a real network,
-        // where a Mac was being called a NAS.
-        DeviceRule("airplay.ports.pair", .appleTV, W.moderate, .all([.port(7000), .port(5000)])),
+        //
+        // There is deliberately no rule here for "5000 and 7000 open".
+        //
+        // That pair means AirPlay is listening, which is true of an Apple TV *and* of any Mac with
+        // AirPlay Receiver switched on — so it cannot name either one. An earlier attempt scored it
+        // for .appleTV and got a MacBook wrong: the Mac's own evidence (Apple vendor + TTL 64)
+        // tied with it, and a tie breaks toward the more specific type, so the Mac lost to a device
+        // it merely shares a port with. An Apple TV is identified by what it advertises —
+        // `model=AppleTV*` or `_airplay._tcp` — not by a port a laptop also opens.
+        //
+        // The pair does still do one job: it guards the NAS rule below, where 5000 alone would
+        // otherwise read as Synology's web UI.
         DeviceRule("raop.mdns", .speaker, W.moderate, .mdns("_raop._tcp")),
         DeviceRule("speaker.vendor", .speaker, W.strong,
                    .anyDescrPhrase(["sonos", "bose", "denon", "yamaha", "harman", "marshall"])),

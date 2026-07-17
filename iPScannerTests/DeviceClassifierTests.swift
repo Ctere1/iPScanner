@@ -325,3 +325,37 @@ final class DeviceClassifierTests: XCTestCase {
         XCTAssertEqual(type(signals(vendor: "Hewlett Packard")), .printer)
     }
 }
+
+// MARK: - AirPlay Receiver on a Mac
+
+extension DeviceClassifierTests {
+
+    private func macSignals() -> DeviceSignals {
+        // A MacBook with AirPlay Receiver on, as the GUI sees it: Apple OUI, TTL 64, and the
+        // AirPlay port pair. No _device-info._tcp — not every Mac advertises one.
+        DeviceSignals(
+            ip: "10.0.0.20",
+            vendor: "Apple, Inc.",
+            ttl: 64,
+            openPorts: [5000, 7000]
+        )
+    }
+
+    /// The reason the AirPlay pair must not claim Apple TV: a MacBook with AirPlay Receiver on
+    /// has exactly these ports, and calling it an Apple TV is as wrong as calling it a NAS was.
+    func testMacBookWithAirPlayReceiverIsAMacNotAnAppleTV() {
+        XCTAssertEqual(DeviceClassifier.live.classify(macSignals()).type, .mac)
+    }
+
+    /// A real Apple TV is identified by what it advertises, not by the ports it shares with a Mac.
+    func testAppleTVIsStillIdentifiedByItsModel() {
+        let appleTV = DeviceSignals(
+            ip: "10.0.0.21",
+            vendor: "Apple, Inc.",
+            openPorts: [5000, 7000],
+            mdnsTypes: ["_airplay._tcp", "_raop._tcp"],
+            mdnsTXT: ["model": "AppleTV11,1"]
+        )
+        XCTAssertEqual(DeviceClassifier.live.classify(appleTV).type, .appleTV)
+    }
+}

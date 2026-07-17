@@ -8,6 +8,9 @@ struct HostTable: View {
     let rows: [Host]
     let requestPortScan: (Set<Host.ID>) -> Void
     let requestBulkDelete: (Set<Host.ID>) -> Void
+    /// Double-click. Inspecting the row is the safe, reversible thing to do with it; opening a
+    /// browser is one item down the context menu for anyone who wants it.
+    let inspect: (Host.ID) -> Void
 
     private func highlighted(_ source: String) -> AttributedString {
         HostCellFormatter.highlighted(source, query: controller.searchQuery)
@@ -176,9 +179,8 @@ struct HostTable: View {
                 requestBulkDelete: requestBulkDelete
             )
         } primaryAction: { ids in
-            if ids.count == 1, let id = ids.first, let host = rows.first(where: { $0.id == id }) {
-                HostActions.openBrowser(ip: host.ip)
-            }
+            guard ids.count == 1, let id = ids.first else { return }
+            inspect(id)
         }
     }
 

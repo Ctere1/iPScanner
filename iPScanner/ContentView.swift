@@ -849,7 +849,13 @@ struct ContentView: View {
                     portError = nil
                     portScanRequest = PortScanRequest(targets: targets)
                 },
-                requestBulkDelete: { pendingBulkDelete = BulkDeleteRequest(ids: $0) }
+                requestBulkDelete: { pendingBulkDelete = BulkDeleteRequest(ids: $0) },
+                inspect: { id in
+                    // Selecting is not enough: the panel is sticky, so if it was closed earlier a
+                    // double-click would land on a row and appear to do nothing at all.
+                    controller.selection = [id]
+                    inspectorVisible = true
+                }
             )
         }
     }
