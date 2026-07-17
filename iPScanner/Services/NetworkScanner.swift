@@ -151,8 +151,22 @@ struct NetworkScanner: NetworkScanning {
         return useTCPFallback ? await tcpFallback(ip) : nil
     }
 
-    /// ICMP ping via /sbin/ping. nil if host did not reply.
+    /// ICMP ping. nil if the host did not reply.
+    ///
+    /// Uses an unprivileged ICMP socket, which costs a file descriptor and no thread. `/sbin/ping`
+    /// remains as a fallback for the case where the kernel refuses the socket (a sandbox without
+    /// the network-client entitlement), since losing host discovery entirely would be worse than
+    /// paying for a subprocess.
     static func ping(_ ip: String) async -> DiscoverResult? {
+        if ICMPPing.isAvailable {
+            return await ICMPPing.ping(ip, timeoutMs: pingTimeoutMs)
+        }
+        return await pingViaProcess(ip)
+    }
+
+    /// Fallback path: one `/sbin/ping` process per host, each parking a dispatch thread in two
+    /// blocking calls for up to `pingTimeoutMs`.
+    static func pingViaProcess(_ ip: String) async -> DiscoverResult? {
         await withCheckedContinuation { (continuation: CheckedContinuation<DiscoverResult?, Never>) in
             DispatchQueue.global(qos: .userInitiated).async {
                 let process = Process()
