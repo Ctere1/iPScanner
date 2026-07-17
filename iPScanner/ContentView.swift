@@ -820,18 +820,9 @@ struct ContentView: View {
 
     @ViewBuilder
     private func subnetRow(_ key: String, _ value: String) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 8) {
-            Text(key)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-                .truncationMode(.tail)
-                .frame(minWidth: 80, alignment: .leading)
-                .layoutPriority(1)
-            Text(value)
-                .textSelection(.enabled)
-            Spacer(minLength: 0)
-        }
+        // .body and no placeholder: a computed subnet field is never absent, so there is nothing
+        // for an em dash to stand in for.
+        InfoRow(key: key, value: value, font: .body, placeholder: nil)
     }
 
     // MARK: - Imported targets chip
@@ -1052,7 +1043,15 @@ struct ContentView: View {
             }
             .frame(maxHeight: .infinity)
             .contextMenu(forSelectionType: Host.ID.self) { ids in
-                contextMenu(for: ids)
+                HostContextMenu(
+                    controller: controller,
+                    ids: ids,
+                    requestPortScan: { targets in
+                        portError = nil
+                        portScanRequest = PortScanRequest(targets: targets)
+                    },
+                    requestBulkDelete: { pendingBulkDelete = BulkDeleteRequest(ids: $0) }
+                )
             } primaryAction: { ids in
                 if ids.count == 1, let id = ids.first, let h = host(forID: id) {
                     HostActions.openBrowser(ip: h.ip)
@@ -1061,110 +1060,6 @@ struct ContentView: View {
         }
     }
 
-    // MARK: - Context menu
-
-    @ViewBuilder
-    private func contextMenu(for ids: Set<Host.ID>) -> some View {
-        if ids.count == 1, let id = ids.first, let h = host(forID: id) {
-            singleHostMenu(h)
-        } else if ids.count > 1 {
-            multiHostMenu(ids: ids)
-        }
-    }
-
-    @ViewBuilder
-    private func singleHostMenu(_ h: Host) -> some View {
-        Section {
-            Button("Open in Browser (http)", systemImage: "safari") {
-                HostActions.openBrowser(ip: h.ip)
-            }
-            Button("Open in Browser (https)", systemImage: "lock.shield") {
-                HostActions.openBrowser(ip: h.ip, scheme: "https")
-            }
-            Button("SSH in Terminal", systemImage: "terminal") {
-                HostActions.openSSH(ip: h.ip)
-            }
-            Button("Connect via VNC", systemImage: "rectangle.connected.to.line.below") {
-                HostActions.openVNC(ip: h.ip)
-            }
-            Button("Microsoft Remote Desktop (RDP)", systemImage: "display") {
-                HostActions.openRDP(ip: h.ip)
-            }
-            Button("Open SMB Share", systemImage: "externaldrive.connected.to.line.below") {
-                HostActions.openSMB(ip: h.ip)
-            }
-            Button("Open AFP Share", systemImage: "externaldrive") {
-                HostActions.openAFP(ip: h.ip)
-            }
-            Button("Telnet in Terminal", systemImage: "terminal.fill") {
-                HostActions.openTelnet(ip: h.ip)
-            }
-            Button("Ping in Terminal", systemImage: "wave.3.right") {
-                HostActions.pingInTerminal(ip: h.ip)
-            }
-        }
-        Section {
-            Button("Refresh", systemImage: "arrow.clockwise") {
-                Task { await controller.refreshHost(h.id) }
-            }
-            if h.mac != nil {
-                Button("Wake (Wake-on-LAN)", systemImage: "power.circle.fill") {
-                    Task { await controller.runWakeOnLAN(for: [h.id]) }
-                }
-            }
-            Button("Port Scan…", systemImage: "network.badge.shield.half.filled") {
-                portError = nil
-                portScanRequest = PortScanRequest(targets: [h.id])
-            }
-        }
-        Section {
-            Button("Copy IP", systemImage: "doc.on.doc") { HostActions.copy(h.ip) }
-            if let host = h.hostname {
-                Button("Copy Hostname") { HostActions.copy(host) }
-            }
-            if let mac = h.mac {
-                Button("Copy MAC") { HostActions.copy(mac) }
-            }
-        }
-        Section {
-            Button("Remove from List", systemImage: "trash", role: .destructive) {
-                controller.deleteHosts([h.id])
-            }
-        }
-    }
-
-    @ViewBuilder
-    private func multiHostMenu(ids: Set<Host.ID>) -> some View {
-        let hosts = ids.compactMap { host(forID: $0) }
-        let wakeable = hosts.filter { $0.mac != nil }.count
-        Button("Refresh (\(hosts.count) hosts)", systemImage: "arrow.clockwise") {
-            Task { await controller.refreshHosts(ids) }
-        }
-        Button("Port Scan… (\(hosts.count) hosts)", systemImage: "network.badge.shield.half.filled") {
-            portError = nil
-            portScanRequest = PortScanRequest(targets: ids)
-        }
-        if wakeable > 0 {
-            Button("Wake (\(wakeable) hosts)", systemImage: "power.circle.fill") {
-                Task { await controller.runWakeOnLAN(for: ids) }
-            }
-        }
-        Button("Copy IPs", systemImage: "doc.on.doc") {
-            HostActions.copy(hosts.map(\.ip).joined(separator: "\n"))
-        }
-        Section {
-            // Confirmed because it is irreversible and bulk: there is no undo, and misclicking it
-            // with a large selection silently discards a whole scan's worth of rows. The
-            // single-host version stays unconfirmed — one row is cheap to get back.
-            Button("Remove from List (\(hosts.count) hosts)", systemImage: "trash", role: .destructive) {
-                pendingBulkDelete = BulkDeleteRequest(ids: ids)
-            }
-        }
-    }
-
-    @ViewBuilder
-    /// Shown when a scan found hosts but the current search/filters hide all of them — a different
-    /// situation from "no scan yet", and one the user needs a way out of.
     private var filteredEmptyState: some View {
         Group {
             if !controller.searchQuery.isEmpty {
