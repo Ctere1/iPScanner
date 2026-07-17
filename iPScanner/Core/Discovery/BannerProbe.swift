@@ -2,6 +2,13 @@ import Foundation
 import Network
 
 enum BannerProbe {
+    /// The ports a banner can be read from, in the priority `fetch` tries them.
+    ///
+    /// Callers filter their host list against this before spending a probe. They used to each carry
+    /// their own `[80, 443, 22]` literal — so this list existed in three places, and only one of
+    /// them was the one `fetch` actually honoured.
+    static let bannerPorts: [Int] = [443, 80, 22]
+
     /// Returns a short banner/title for a host based on what's responding on standard ports.
     /// Priority: HTTPS title (443) > HTTP title (80) > SSH banner (22).
     static func fetch(_ ip: String, openPorts: [Int]) async -> String? {

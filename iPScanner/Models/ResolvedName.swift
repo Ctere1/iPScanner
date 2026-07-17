@@ -36,7 +36,3 @@ struct ResolvedName: Equatable {
         return nil
     }
 }
-
-private extension String {
-    var trimmed: String { trimmingCharacters(in: .whitespacesAndNewlines) }
-}

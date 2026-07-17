@@ -113,14 +113,6 @@ struct ContentView: View {
     /// if the user hasn't hidden it. Sticky, like Xcode's inspector.
     private var showInspector: Bool { inspectorVisible && inspectedHost != nil }
 
-    private func diffTint(_ change: HostChange) -> Color {
-        switch change {
-        case .new: .green
-        case .modified: .yellow
-        case .missing: .red
-        }
-    }
-
     /// Renders text with the active search query highlighted.
     /// Falls through to plain AttributedString when the query is empty or doesn't match.
     private func highlighted(_ source: String) -> AttributedString {
@@ -952,7 +944,7 @@ struct ContentView: View {
                     TableColumn("Δ") { host in
                         if let change = controller.change(for: host) {
                             Image(systemName: change.sfSymbol)
-                                .foregroundStyle(diffTint(change))
+                                .foregroundStyle(change.tint)
                                 .help(change.label)
                                 .accessibilityLabel(change.label)
                         } else {

@@ -54,12 +54,12 @@ struct StatusBar: View {
                 .foregroundStyle(.secondary)
 
             HStack(spacing: 14) {
-                Label("\(diff.newCount) new", systemImage: "plus.circle.fill")
-                    .foregroundStyle(.green)
-                Label("\(diff.modifiedCount) changed", systemImage: "circle.lefthalf.filled")
-                    .foregroundStyle(.yellow)
-                Label("\(diff.missingCount) missing", systemImage: "minus.circle.fill")
-                    .foregroundStyle(.red)
+                Label("\(diff.newCount) new", systemImage: HostChange.Kind.new.sfSymbol)
+                    .foregroundStyle(HostChange.Kind.new.tint)
+                Label("\(diff.modifiedCount) changed", systemImage: HostChange.Kind.modified.sfSymbol)
+                    .foregroundStyle(HostChange.Kind.modified.tint)
+                Label("\(diff.missingCount) missing", systemImage: HostChange.Kind.missing.sfSymbol)
+                    .foregroundStyle(HostChange.Kind.missing.tint)
             }
             .font(.callout)
 

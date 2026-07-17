@@ -79,9 +79,8 @@ struct ScanRange: Hashable {
         guard let prefix = Int(prefixPart), (0...32).contains(prefix) else { return nil }
         guard let ipInt = IPv4.uint32(from: ipPart) else { return nil }
 
-        let mask: UInt32 = prefix == 0 ? 0 : UInt32.max << (32 - prefix)
-        let network = ipInt & mask
-        let broadcast = network | ~mask
+        let network = IPv4.network(ipInt, bits: prefix)
+        let broadcast = IPv4.broadcast(ipInt, bits: prefix)
 
         if prefix < 31 {
             self.lowerBound = network &+ 1
@@ -119,5 +118,28 @@ enum IPv4 {
 
     static func string(from value: UInt32) -> String {
         "\((value >> 24) & 0xFF).\((value >> 16) & 0xFF).\((value >> 8) & 0xFF).\(value & 0xFF)"
+    }
+
+    // MARK: - Prefix math
+    //
+    // Three callers derived a mask from a prefix length, and each wrote out the same shift. The
+    // `prefix == 0` special case is the reason this is worth sharing: `UInt32.max << 32` is
+    // undefined-shift territory, and only a /0 hits it — so a copy that forgot the guard looked
+    // correct everywhere anyone tested it.
+
+    /// Netmask for a prefix length: `/24` → `255.255.255.0`.
+    static func mask(bits: Int) -> UInt32 {
+        guard (0...32).contains(bits) else { return 0 }
+        return bits == 0 ? 0 : UInt32.max << (32 - bits)
+    }
+
+    /// Network (first) address of the block containing `ip`.
+    static func network(_ ip: UInt32, bits: Int) -> UInt32 {
+        ip & mask(bits: bits)
+    }
+
+    /// Broadcast (last) address of the block containing `ip`.
+    static func broadcast(_ ip: UInt32, bits: Int) -> UInt32 {
+        network(ip, bits: bits) | ~mask(bits: bits)
     }
 }

@@ -10,10 +10,17 @@ import XCTest
 @MainActor
 final class LabelAnchorTests: XCTestCase {
 
-    private func makeController() -> ScanController {
-        let c = ScanController()
-        c.labels = [:]
-        return c
+    /// A store of its own per test, following ColumnVisibilityTests. This used to construct a bare
+    /// `ScanController()` — which read the developer's real saved labels — and then clear the
+    /// dictionary to paper over it.
+    private func makeController(_ name: String = #function) -> ScanController {
+        let suite = "LabelAnchorTests.\(name)"
+        UserDefaults().removePersistentDomain(forName: suite)
+        let defaults = UserDefaults(suiteName: suite)!
+        return ScanController(
+            labelStore: LabelStore(store: PersistedStore(defaults: defaults)),
+            savedRangeStore: SavedRangeStore(store: PersistedStore(defaults: defaults))
+        )
     }
 
     func testSetsLabelByAnchor() {

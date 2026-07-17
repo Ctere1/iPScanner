@@ -48,79 +48,20 @@ enum PortScanner {
 
     static func probe(_ ip: String, ports: [Int], timeoutMs: Int = 800) async -> [Int] {
         var open: [Int] = []
-        await withTaskGroup(of: (Int, Bool).self) { group in
-            var iter = ports.makeIterator()
-            for _ in 0..<min(perHostConcurrency, ports.count) {
-                guard let port = iter.next() else { break }
-                group.addTask { (port, await probeOne(ip: ip, port: port, timeoutMs: timeoutMs)) }
-            }
-            while let (port, isOpen) = await group.next() {
-                if isOpen { open.append(port) }
-                if let next = iter.next() {
-                    group.addTask { (next, await probeOne(ip: ip, port: next, timeoutMs: timeoutMs)) }
-                }
-            }
+        await withWindowedTaskGroup(
+            over: ports,
+            limit: perHostConcurrency,
+            operation: { port in (port, await probeOne(ip: ip, port: port, timeoutMs: timeoutMs)) }
+        ) { port, isOpen in
+            if isOpen { open.append(port) }
+            return true
         }
         return open.sorted()
     }
 
     private static func probeOne(ip: String, port: Int, timeoutMs: Int) async -> Bool {
-        guard (1...65535).contains(port),
-              let nwPort = NWEndpoint.Port(rawValue: UInt16(port)) else { return false }
-
-        let endpoint = NWEndpoint.hostPort(host: NWEndpoint.Host(ip), port: nwPort)
-        let connection = NWConnection(to: endpoint, using: .tcp)
-        let queue = DispatchQueue.global(qos: .userInitiated)
-
-        return await withCheckedContinuation { (continuation: CheckedContinuation<Bool, Never>) in
-            let state = ProbeState(connection: connection, continuation: continuation)
-
-            // Cancelled on every terminal path, as in NetBIOSResolver. An uncancelled asyncAfter
-            // block keeps the connection and continuation alive for the whole timeout window even
-            // when the port answers in 2ms — across a wide scan that is a large rolling set of
-            // dead-but-retained connections.
-            let timeoutWork = DispatchWorkItem { state.finish(false) }
-
-            connection.stateUpdateHandler = { newState in
-                switch newState {
-                case .ready:
-                    timeoutWork.cancel()
-                    state.finish(true)
-                case .failed, .cancelled:
-                    timeoutWork.cancel()
-                    state.finish(false)
-                case .setup, .preparing, .waiting:
-                    break
-                @unknown default:
-                    break
-                }
-            }
-
-            queue.asyncAfter(deadline: .now() + .milliseconds(timeoutMs), execute: timeoutWork)
-
-            connection.start(queue: queue)
-        }
-    }
-
-    private final class ProbeState: @unchecked Sendable {
-        private let lock = NSLock()
-        private var done = false
-        private let connection: NWConnection
-        private let continuation: CheckedContinuation<Bool, Never>
-
-        init(connection: NWConnection, continuation: CheckedContinuation<Bool, Never>) {
-            self.connection = connection
-            self.continuation = continuation
-        }
-
-        func finish(_ value: Bool) {
-            lock.lock()
-            defer { lock.unlock() }
-            guard !done else { return }
-            done = true
-            connection.cancel()
-            continuation.resume(returning: value)
-        }
+        guard (1...65535).contains(port) else { return false }
+        return await NWProbe.canConnect(ip, port: UInt16(port), timeoutMs: timeoutMs)
     }
 
     /// Parses "22, 80, 443, 8000-8100" → sorted unique ports. Returns nil on invalid input.

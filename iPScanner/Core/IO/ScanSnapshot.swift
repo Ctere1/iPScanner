@@ -78,8 +78,6 @@ enum SnapshotIO {
     }
 
     static func defaultFileName() -> String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd-HHmm"
-        return "iPScanner-\(formatter.string(from: Date())).ipscan.json"
+        ExportNaming.fileName(ext: "ipscan.json")
     }
 }

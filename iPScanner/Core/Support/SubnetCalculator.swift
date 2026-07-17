@@ -25,9 +25,9 @@ enum SubnetCalculator {
         guard let prefix = Int(prefixPart), (0...32).contains(prefix) else { return nil }
         guard let ipInt = IPv4.uint32(from: ipPart) else { return nil }
 
-        let mask: UInt32 = prefix == 0 ? 0 : UInt32.max << (32 - prefix)
-        let network = ipInt & mask
-        let broadcast = network | ~mask
+        let mask = IPv4.mask(bits: prefix)
+        let network = IPv4.network(ipInt, bits: prefix)
+        let broadcast = IPv4.broadcast(ipInt, bits: prefix)
         let totalAddresses = Int(broadcast) - Int(network) + 1
 
         // Usable host range:

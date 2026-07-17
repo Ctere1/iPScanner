@@ -1,29 +1,28 @@
 import Foundation
 
-struct SavedRange: Codable, Hashable, Identifiable {
-    var range: String
-    var name: String?
+/// Reads and writes the two things iPScanner remembers between launches: host labels and saved
+/// ranges.
+///
+/// Takes its `UserDefaults` rather than reaching for `.standard`, following ColumnVisibility — a
+/// test hands it a throwaway suite instead of writing into the real app's saved state. The static
+/// form this replaces was constructed inside `ScanController.init`, which meant merely constructing
+/// a controller in a test touched the developer's own defaults.
+struct PersistedStore: Sendable {
+    private let labelsKey = "iPScanner.labels"
+    private let savedRangesKeyV1 = "iPScanner.savedRanges"
+    private let savedRangesKeyV2 = "iPScanner.savedRangesV2"
 
-    var id: String { range }
+    private let defaults: UserDefaults
 
-    var displayTitle: String {
-        if let name, !name.isEmpty { return name }
-        return range
+    init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
     }
-}
 
-enum PersistedStore {
-    private static let labelsKey = "iPScanner.labels"
-    private static let savedRangesKeyV1 = "iPScanner.savedRanges"
-    private static let savedRangesKeyV2 = "iPScanner.savedRangesV2"
-
-    private static var defaults: UserDefaults { .standard }
-
-    static func loadLabels() -> [String: String] {
+    func loadLabels() -> [String: String] {
         defaults.dictionary(forKey: labelsKey) as? [String: String] ?? [:]
     }
 
-    static func saveLabels(_ labels: [String: String]) {
+    func saveLabels(_ labels: [String: String]) {
         if labels.isEmpty {
             defaults.removeObject(forKey: labelsKey)
         } else {
@@ -31,7 +30,7 @@ enum PersistedStore {
         }
     }
 
-    static func loadRanges() -> [SavedRange] {
+    func loadRanges() -> [SavedRange] {
         if let data = defaults.data(forKey: savedRangesKeyV2),
            let decoded = try? JSONDecoder().decode([SavedRange].self, from: data) {
             return decoded
@@ -43,7 +42,7 @@ enum PersistedStore {
         return []
     }
 
-    static func saveRanges(_ ranges: [SavedRange]) {
+    func saveRanges(_ ranges: [SavedRange]) {
         if ranges.isEmpty {
             defaults.removeObject(forKey: savedRangesKeyV2)
             defaults.removeObject(forKey: savedRangesKeyV1)

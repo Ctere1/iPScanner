@@ -78,6 +78,31 @@ struct Host: Identifiable, Hashable, Sendable {
     var ttlSort: Int { ttl ?? .max }
     var openPortCount: Int { openPorts.count }
 
+    /// Folds a later scan phase's findings for this host into what is already known.
+    ///
+    /// Discovery yields a host as soon as it answers, then enrichment yields it again with a
+    /// hostname, a MAC, a vendor. Each event carries only what its phase learned, so a nil means
+    /// "this phase didn't look", never "this host has none" — hence field-by-field rather than
+    /// assignment.
+    ///
+    /// The GUI and the CLI each had their own copy of this. They had already drifted: the CLI's
+    /// dropped `netbiosName` and `workgroup`, so `ipscanner` collected NetBIOS names over UDP 137
+    /// and then silently discarded them.
+    mutating func merge(_ update: Host) {
+        if let v = update.hostname { hostname = v }
+        if let v = update.mac { mac = v }
+        if let v = update.vendor { vendor = v }
+        if let v = update.rttMs { rttMs = v }
+        if let v = update.ttl { ttl = v }
+        if let v = update.netbiosName { netbiosName = v }
+        if let v = update.workgroup { workgroup = v }
+        if let v = update.serviceTitle { serviceTitle = v }
+        if !update.scannedPorts.isEmpty {
+            mergePortResults(probed: update.scannedPorts, open: update.openPorts)
+        }
+        status = update.status
+    }
+
     /// Folds the result of probing `probed` into what is already known.
     ///
     /// Re-probing a port replaces its verdict; a port that was not probed keeps the one it had.

@@ -88,15 +88,14 @@ targets:
   ipscanner:
     type: tool
     platform: macOS
+    # An include list, not an exclude list. The previous form compiled all of Services/ minus four
+    # named files, so every new file was CLI-visible by default and a UI-dependent one had to be
+    # remembered here or it broke this target. Now App/ is simply never seen, and a UI import that
+    # sneaks into Core/ fails this build immediately — see scripts/check-layering.sh.
     sources:
       - path: cli
       - path: iPScanner/Models
-      - path: iPScanner/Services
-        excludes:
-          - "HostActions.swift"
-          - "ScanController.swift"
-          - "PingMonitor.swift"
-          - "MDNSDiscovery.swift"
+      - path: iPScanner/Core
     settings:
       base:
         PRODUCT_NAME: ipscanner

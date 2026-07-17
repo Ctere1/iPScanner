@@ -156,17 +156,7 @@ struct IPScannerCLI {
 
     private static func mergeHost(_ existing: Host, with update: Host) -> Host {
         var merged = existing
-        if let v = update.hostname { merged.hostname = v }
-        if let v = update.mac { merged.mac = v }
-        if let v = update.vendor { merged.vendor = v }
-        if let v = update.rttMs { merged.rttMs = v }
-        if let v = update.ttl { merged.ttl = v }
-        // Same rule as the GUI: only fold in ports that were actually probed.
-        if !update.scannedPorts.isEmpty {
-            merged.mergePortResults(probed: update.scannedPorts, open: update.openPorts)
-        }
-        if let v = update.serviceTitle { merged.serviceTitle = v }
-        merged.status = update.status
+        merged.merge(update)
         return merged
     }
 
@@ -196,7 +186,7 @@ struct IPScannerCLI {
 
         if fetchBanners {
             let bannerTargets: [(String, [Int])] = hosts.values.compactMap { host in
-                let relevant = host.openPorts.filter { [80, 443, 22].contains($0) }
+                let relevant = host.openPorts.filter { BannerProbe.bannerPorts.contains($0) }
                 return relevant.isEmpty ? nil : (host.ip, relevant)
             }
             // Windowed like the port phase above; an unbounded group opened a connection to every

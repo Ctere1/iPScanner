@@ -65,8 +65,7 @@ enum NetworkInterface {
 
     static func subnet(from info: NetworkInterfaceInfo) -> String? {
         guard let ipInt = IPv4.uint32(from: info.ipv4) else { return nil }
-        let mask: UInt32 = info.netmaskBits == 0 ? 0 : UInt32.max << (32 - info.netmaskBits)
-        let network = ipInt & mask
+        let network = IPv4.network(ipInt, bits: info.netmaskBits)
         return "\(IPv4.string(from: network))/\(info.netmaskBits)"
     }
 }

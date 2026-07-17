@@ -2,37 +2,18 @@ import Foundation
 
 enum ARPLookup {
     static func table() async -> [String: String] {
-        await withCheckedContinuation { (continuation: CheckedContinuation<[String: String], Never>) in
-            DispatchQueue.global(qos: .userInitiated).async {
-                let process = Process()
-                process.executableURL = URL(fileURLWithPath: "/usr/sbin/arp")
-                process.arguments = ["-an"]
-                let stdout = Pipe()
-                process.standardOutput = stdout
-                // An attached-but-undrained pipe deadlocks the child once it fills the buffer:
-                // stdout never closes, readDataToEndOfFile never returns, and the continuation is
-                // never resumed. Nothing reads stderr, so discard it at the kernel instead.
-                process.standardError = FileHandle.nullDevice
-                do {
-                    try process.run()
-                } catch {
-                    continuation.resume(returning: [:])
-                    return
-                }
-                let data = stdout.fileHandleForReading.readDataToEndOfFile()
-                process.waitUntilExit()
+        guard let (_, output) = await Subprocess.text("/usr/sbin/arp", ["-an"]) else { return [:] }
+        return parse(output)
+    }
 
-                let output = String(data: data, encoding: .utf8) ?? ""
-                var table: [String: String] = [:]
-                for line in output.split(separator: "\n") {
-                    if line.contains("(incomplete)") { continue }
-                    guard let match = line.firstMatch(of: #/\(([0-9.]+)\)\s+at\s+([0-9a-fA-F:]+)/#) else { continue }
-                    let ip = String(match.1)
-                    let mac = String(match.2).lowercased()
-                    table[ip] = mac
-                }
-                continuation.resume(returning: table)
-            }
+    /// Splits `arp -an` output into ip → mac. Separated from the subprocess so it is testable.
+    static func parse(_ output: String) -> [String: String] {
+        var table: [String: String] = [:]
+        for line in output.split(separator: "\n") {
+            if line.contains("(incomplete)") { continue }
+            guard let match = line.firstMatch(of: #/\(([0-9.]+)\)\s+at\s+([0-9a-fA-F:]+)/#) else { continue }
+            table[String(match.1)] = String(match.2).lowercased()
         }
+        return table
     }
 }

@@ -68,10 +68,8 @@ enum ExportService {
 
     /// Human-readable plain-text report. Suitable for tickets, email, Slack snippets.
     static func textReport(rows: [Row], rangeInput: String, scannedTotal: Int, aliveCount: Int) -> String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd HH:mm"
         var out = "iPScanner Report\n"
-        out += "Generated: \(formatter.string(from: Date()))\n"
+        out += "Generated: \(ExportNaming.reportTimestamp())\n"
         if !rangeInput.isEmpty { out += "Range: \(rangeInput)\n" }
         out += "Scanned: \(scannedTotal)\n"
         out += "Alive: \(aliveCount)\n"
@@ -98,9 +96,7 @@ enum ExportService {
     }
 
     static func defaultFileName(ext: String) -> String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd-HHmm"
-        return "iPScanner-\(formatter.string(from: Date())).\(ext)"
+        ExportNaming.fileName(ext: ext)
     }
 
     /// Leading characters a spreadsheet treats as the start of a formula. A hostname comes from

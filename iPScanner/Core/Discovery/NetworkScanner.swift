@@ -63,35 +63,27 @@ struct NetworkScanner: NetworkScanning {
         var alive: [(ip: String, rtt: Double, ttl: Int?, probed: [Int], open: [Int])] = []
         var scanned = 0
 
-        await withTaskGroup(of: (String, DiscoverResult?).self) { group in
-            var iter = addresses.makeIterator()
-            for _ in 0..<min(pingConcurrency, addresses.count) {
-                guard let ip = iter.next() else { break }
-                group.addTask { (ip, await Self.discover(ip, useTCPFallback: useTCPFallback)) }
+        await withWindowedTaskGroup(
+            over: addresses,
+            limit: Self.pingConcurrency,
+            operation: { ip in (ip, await Self.discover(ip, useTCPFallback: useTCPFallback)) }
+        ) { ip, result in
+            scanned += 1
+            continuation.yield(.progress(scanned: scanned, total: total))
+            if let result = result {
+                alive.append((ip, result.rttMs, result.ttl, result.probedPorts, result.openPorts))
+                continuation.yield(.host(Host(
+                    ip: ip,
+                    rttMs: result.rttMs,
+                    ttl: result.ttl,
+                    openPorts: result.openPorts,
+                    scannedPorts: result.probedPorts,
+                    status: .alive
+                )))
+            } else {
+                continuation.yield(.host(Host(ip: ip, status: .dead)))
             }
-
-            while let (ip, result) = await group.next() {
-                scanned += 1
-                continuation.yield(.progress(scanned: scanned, total: total))
-                if let result = result {
-                    alive.append((ip, result.rttMs, result.ttl, result.probedPorts, result.openPorts))
-                    continuation.yield(.host(Host(
-                        ip: ip,
-                        rttMs: result.rttMs,
-                        ttl: result.ttl,
-                        openPorts: result.openPorts,
-                        scannedPorts: result.probedPorts,
-                        status: .alive
-                    )))
-                } else {
-                    continuation.yield(.host(Host(ip: ip, status: .dead)))
-                }
-                if Task.isCancelled { break }
-                if let next = iter.next() {
-                    group.addTask { (next, await Self.discover(next, useTCPFallback: useTCPFallback)) }
-                }
-            }
-            if Task.isCancelled { group.cancelAll() }
+            return true
         }
 
         if Task.isCancelled {
@@ -109,47 +101,34 @@ struct NetworkScanner: NetworkScanning {
         let oui = OUILookup.shared
 
         // --- Phase 2: enrich (DNS + MAC + Vendor) per alive host ---
-        await withTaskGroup(of: Host.self) { group in
-            var iter = alive.makeIterator()
-
-            func enqueue(_ entry: (ip: String, rtt: Double, ttl: Int?, probed: [Int], open: [Int])) {
+        await withWindowedTaskGroup(
+            over: alive,
+            limit: Self.enrichConcurrency,
+            operation: { entry in
                 let mac = arpTable[entry.ip]
                 let vendor = mac.flatMap { oui.vendor(forMAC: $0) }
-                group.addTask {
-                    async let hostname = DNSResolver.reverseLookup(entry.ip)
-                    async let netbios: NetBIOSResolver.Result? =
-                        includeNetBIOS ? NetBIOSResolver.resolve(entry.ip) : nil
-                    let resolvedHost = await hostname
-                    let nb = await netbios
-                    return Host(
-                        ip: entry.ip,
-                        hostname: resolvedHost,
-                        mac: mac,
-                        vendor: vendor,
-                        rttMs: entry.rtt,
-                        ttl: entry.ttl,
-                        netbiosName: nb?.computerName,
-                        workgroup: nb?.workgroup,
-                        openPorts: entry.open,
-                        scannedPorts: entry.probed,
-                        status: .alive
-                    )
-                }
+                async let hostname = DNSResolver.reverseLookup(entry.ip)
+                async let netbios: NetBIOSResolver.Result? =
+                    includeNetBIOS ? NetBIOSResolver.resolve(entry.ip) : nil
+                let resolvedHost = await hostname
+                let nb = await netbios
+                return Host(
+                    ip: entry.ip,
+                    hostname: resolvedHost,
+                    mac: mac,
+                    vendor: vendor,
+                    rttMs: entry.rtt,
+                    ttl: entry.ttl,
+                    netbiosName: nb?.computerName,
+                    workgroup: nb?.workgroup,
+                    openPorts: entry.open,
+                    scannedPorts: entry.probed,
+                    status: .alive
+                )
             }
-
-            for _ in 0..<min(enrichConcurrency, alive.count) {
-                guard let entry = iter.next() else { break }
-                enqueue(entry)
-            }
-
-            while let host = await group.next() {
-                continuation.yield(.host(host))
-                if Task.isCancelled { break }
-                if let next = iter.next() {
-                    enqueue(next)
-                }
-            }
-            if Task.isCancelled { group.cancelAll() }
+        ) { host in
+            continuation.yield(.host(host))
+            return true
         }
 
         continuation.yield(.done)
@@ -180,39 +159,19 @@ struct NetworkScanner: NetworkScanning {
     /// Fallback path: one `/sbin/ping` process per host, each parking a dispatch thread in two
     /// blocking calls for up to `pingTimeoutMs`.
     static func pingViaProcess(_ ip: String) async -> DiscoverResult? {
-        await withCheckedContinuation { (continuation: CheckedContinuation<DiscoverResult?, Never>) in
-            DispatchQueue.global(qos: .userInitiated).async {
-                let process = Process()
-                process.executableURL = URL(fileURLWithPath: "/sbin/ping")
-                process.arguments = ["-c", "1", "-W", String(pingTimeoutMs), ip]
-                let stdout = Pipe()
-                process.standardOutput = stdout
-                // An attached-but-undrained pipe deadlocks the child once it fills the buffer:
-                // stdout never closes, readDataToEndOfFile never returns, and the continuation is
-                // never resumed. Nothing reads stderr, so discard it at the kernel instead.
-                process.standardError = FileHandle.nullDevice
+        guard let (status, output) = await Subprocess.text(
+            "/sbin/ping", ["-c", "1", "-W", String(pingTimeoutMs), ip]
+        ) else { return nil }
+        guard status == 0 else { return nil }
+        return parsePingOutput(output)
+    }
 
-                do {
-                    try process.run()
-                } catch {
-                    continuation.resume(returning: nil)
-                    return
-                }
-
-                let data = stdout.fileHandleForReading.readDataToEndOfFile()
-                process.waitUntilExit()
-
-                guard process.terminationStatus == 0,
-                      let output = String(data: data, encoding: .utf8),
-                      let timeMatch = output.firstMatch(of: #/time=([0-9.]+)\s*ms/#),
-                      let rtt = Double(timeMatch.1) else {
-                    continuation.resume(returning: nil)
-                    return
-                }
-                let ttl = output.firstMatch(of: #/ttl=([0-9]+)/#).flatMap { Int($0.1) }
-                continuation.resume(returning: DiscoverResult(rttMs: rtt, ttl: ttl))
-            }
-        }
+    /// Pulls rtt and TTL out of `ping -c 1` output. Separated from the subprocess so it is testable.
+    static func parsePingOutput(_ output: String) -> DiscoverResult? {
+        guard let timeMatch = output.firstMatch(of: #/time=([0-9.]+)\s*ms/#),
+              let rtt = Double(timeMatch.1) else { return nil }
+        let ttl = output.firstMatch(of: #/ttl=([0-9]+)/#).flatMap { Int($0.1) }
+        return DiscoverResult(rttMs: rtt, ttl: ttl)
     }
 
     /// Concurrent TCP probe across fallback ports. Returns probe duration in ms if any port handshakes.

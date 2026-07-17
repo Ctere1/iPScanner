@@ -30,8 +30,13 @@ final class ScanController {
     var sortOrder: [KeyPathComparator<Host>] = [
         KeyPathComparator(\Host.ipNumeric, order: .forward)
     ]
-    var labels: [String: String] = [:]   // anchor → label (anchor = MAC ?? IP)
-    var savedRanges: [SavedRange] = []
+    let labelStore: LabelStore
+    let savedRangeStore: SavedRangeStore
+
+    /// anchor → label (anchor = MAC ?? IP). Reads through to `labelStore`, which owns persistence.
+    var labels: [String: String] { labelStore.labels }
+    var savedRanges: [SavedRange] { savedRangeStore.ranges }
+
     var showDeadHosts: Bool = false
     var filterHasOpenPorts: Bool = false
     var filterHasLabel: Bool = false
@@ -63,11 +68,16 @@ final class ScanController {
     /// must not write results or clear the current run's progress flags.
     private var portScanGeneration: UInt64 = 0
 
-    init() {
-        self.labels = PersistedStore.loadLabels()
-        self.savedRanges = PersistedStore.loadRanges().sorted {
-            $0.displayTitle.localizedCaseInsensitiveCompare($1.displayTitle) == .orderedAscending
-        }
+    /// Stores are injected so a test can construct a controller without touching the real app's
+    /// saved labels and ranges — the previous init read `UserDefaults.standard` unconditionally.
+    init(
+        labelStore: LabelStore? = nil,
+        savedRangeStore: SavedRangeStore? = nil
+    ) {
+        // Built here rather than as default arguments: a default argument is evaluated in the
+        // caller's isolation, and these are @MainActor.
+        self.labelStore = labelStore ?? LabelStore()
+        self.savedRangeStore = savedRangeStore ?? SavedRangeStore()
     }
 
     /// IP → position in `hosts`. Enrichment merges one event per host per phase, so resolving the
@@ -138,70 +148,30 @@ final class ScanController {
 
     // MARK: - Labels
 
-    func anchor(for host: Host) -> String {
-        host.mac ?? host.ip
-    }
+    func anchor(for host: Host) -> String { labelStore.anchor(for: host) }
 
-    func label(for host: Host) -> String? {
-        labels[anchor(for: host)]
-    }
+    func label(for host: Host) -> String? { labelStore.label(for: host) }
 
-    func setLabel(_ value: String?, for host: Host) {
-        setLabel(value, forAnchor: anchor(for: host))
-    }
+    func setLabel(_ value: String?, for host: Host) { labelStore.setLabel(value, for: host) }
 
-    /// Labels are keyed by anchor, so an editor that captured the anchor when editing began can
-    /// commit safely even after the selection has moved on or the host is gone from the table.
     func setLabel(_ value: String?, forAnchor key: String) {
-        let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines)
-        if let trimmed, !trimmed.isEmpty {
-            labels[key] = trimmed
-        } else {
-            labels.removeValue(forKey: key)
-        }
-        PersistedStore.saveLabels(labels)
+        labelStore.setLabel(value, forAnchor: key)
     }
 
     // MARK: - Saved ranges
 
-    var isCurrentRangeSaved: Bool {
-        let key = rangeInput.trimmingCharacters(in: .whitespaces)
-        return !key.isEmpty && savedRanges.contains { $0.range == key }
-    }
+    var isCurrentRangeSaved: Bool { savedRangeStore.isSaved(rangeInput) }
 
-    func toggleSaveCurrentRange() {
-        let key = rangeInput.trimmingCharacters(in: .whitespaces)
-        guard !key.isEmpty else { return }
-        if let idx = savedRanges.firstIndex(where: { $0.range == key }) {
-            savedRanges.remove(at: idx)
-        } else {
-            savedRanges.append(SavedRange(range: key, name: nil))
-            sortSavedRanges()
-        }
-        PersistedStore.saveRanges(savedRanges)
-    }
+    func toggleSaveCurrentRange() { savedRangeStore.toggle(rangeInput) }
 
-    func removeSavedRange(_ range: String) {
-        savedRanges.removeAll { $0.range == range }
-        PersistedStore.saveRanges(savedRanges)
-    }
+    func removeSavedRange(_ range: String) { savedRangeStore.remove(range) }
 
     func renameSavedRange(_ range: String, to name: String?) {
-        guard let idx = savedRanges.firstIndex(where: { $0.range == range }) else { return }
-        let trimmed = name?.trimmingCharacters(in: .whitespacesAndNewlines)
-        savedRanges[idx].name = (trimmed?.isEmpty == false) ? trimmed : nil
-        sortSavedRanges()
-        PersistedStore.saveRanges(savedRanges)
+        savedRangeStore.rename(range, to: name)
     }
 
     func loadSavedRange(_ range: String) {
         rangeInput = range
-    }
-
-    private func sortSavedRanges() {
-        savedRanges.sort {
-            $0.displayTitle.localizedCaseInsensitiveCompare($1.displayTitle) == .orderedAscending
-        }
     }
 
     func detectDefaultSubnetIfNeeded() {
@@ -429,7 +399,7 @@ final class ScanController {
         // target hosts that were never scanned.
         let bannerTargets: [(Host.ID, String, [Int])] = targets.compactMap { t in
             guard let idx = index(of: t.id, ip: t.ip) else { return nil }
-            let banner = hosts[idx].openPorts.filter { [80, 443, 22].contains($0) }
+            let banner = hosts[idx].openPorts.filter { BannerProbe.bannerPorts.contains($0) }
             return banner.isEmpty ? nil : (t.id, t.ip, banner)
         }
 
@@ -561,10 +531,7 @@ final class ScanController {
         hosts = restored
         // A snapshot file is user-supplied and may repeat an IP; last one wins rather than trapping.
         rebuildIndex()
-        for (key, value) in snapshot.labels where labels[key] == nil {
-            labels[key] = value
-        }
-        PersistedStore.saveLabels(labels)
+        labelStore.merge(snapshot.labels)
         selection = []
         elapsed = 0
         startDate = nil
@@ -680,23 +647,7 @@ final class ScanController {
             mergeWarning(w)
         case .host(let h):
             if let idx = indexByIp[h.ip], hosts.indices.contains(idx) {
-                var merged = hosts[idx]
-                if let v = h.hostname { merged.hostname = v }
-                if let v = h.mac { merged.mac = v }
-                if let v = h.vendor { merged.vendor = v }
-                if let v = h.rttMs { merged.rttMs = v }
-                if let v = h.ttl { merged.ttl = v }
-                if let v = h.netbiosName { merged.netbiosName = v }
-                if let v = h.workgroup { merged.workgroup = v }
-                if let v = h.serviceTitle { merged.serviceTitle = v }
-                // Only fold in ports that were actually probed: an event that looked at nothing
-                // must not erase what an earlier phase found, and an event that probed and found
-                // nothing open must be able to say so.
-                if !h.scannedPorts.isEmpty {
-                    merged.mergePortResults(probed: h.scannedPorts, open: h.openPorts)
-                }
-                merged.status = h.status
-                hosts[idx] = merged
+                hosts[idx].merge(h)
             } else {
                 indexByIp[h.ip] = hosts.count
                 hosts.append(h)

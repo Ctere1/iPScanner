@@ -13,21 +13,35 @@ enum HostChange: Equatable, Sendable {
         case serviceTitle
     }
 
-    var sfSymbol: String {
-        switch self {
-        case .new: "plus.circle.fill"
-        case .modified: "circle.lefthalf.filled"
-        case .missing: "minus.circle.fill"
+    /// The case without its payload.
+    ///
+    /// Presentation depends only on which kind of change this is, never on the fields that changed
+    /// or the record that went missing. Without this, a summary view that wants the "missing" icon
+    /// has to fabricate a `HostRecord` to get at it — which is why StatusBar hardcoded its own
+    /// copies of these symbols instead of reading them from here.
+    enum Kind: String, CaseIterable, Sendable {
+        case new
+        case modified
+        case missing
+
+        var sfSymbol: String {
+            switch self {
+            case .new: "plus.circle.fill"
+            case .modified: "circle.lefthalf.filled"
+            case .missing: "minus.circle.fill"
+            }
         }
     }
 
-    var tint: String {
+    var kind: Kind {
         switch self {
-        case .new: "green"
-        case .modified: "yellow"
-        case .missing: "red"
+        case .new: .new
+        case .modified: .modified
+        case .missing: .missing
         }
     }
+
+    var sfSymbol: String { kind.sfSymbol }
 
     var label: String {
         switch self {

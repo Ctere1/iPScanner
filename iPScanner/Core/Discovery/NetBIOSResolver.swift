@@ -16,42 +16,9 @@ enum NetBIOSResolver {
     static let timeoutMs = 800
 
     static func resolve(_ ip: String) async -> Result? {
-        await withCheckedContinuation { (continuation: CheckedContinuation<Result?, Never>) in
-            let queue = DispatchQueue.global(qos: .userInitiated)
-            let host = NWEndpoint.Host(ip)
-            guard let port = NWEndpoint.Port(rawValue: 137) else {
-                continuation.resume(returning: nil)
-                return
-            }
-            let connection = NWConnection(host: host, port: port, using: .udp)
-            let state = ResumeOnce()
-            let query = buildQuery(transactionID: UInt16.random(in: 0...UInt16.max))
-
-            let timeoutWork = DispatchWorkItem {
-                connection.cancel()
-                state.fire { continuation.resume(returning: nil) }
-            }
-            queue.asyncAfter(deadline: .now() + .milliseconds(timeoutMs), execute: timeoutWork)
-
-            connection.stateUpdateHandler = { newState in
-                switch newState {
-                case .ready:
-                    connection.send(content: query, completion: .contentProcessed { _ in })
-                    connection.receiveMessage { data, _, _, _ in
-                        timeoutWork.cancel()
-                        let parsed: Result? = data.flatMap { parseResponse($0) }
-                        connection.cancel()
-                        state.fire { continuation.resume(returning: parsed) }
-                    }
-                case .failed, .cancelled:
-                    timeoutWork.cancel()
-                    state.fire { continuation.resume(returning: nil) }
-                default:
-                    break
-                }
-            }
-            connection.start(queue: queue)
-        }
+        let query = buildQuery(transactionID: UInt16.random(in: 0...UInt16.max))
+        let reply = await NWProbe.exchange(ip, port: 137, payload: query, timeoutMs: timeoutMs)
+        return reply.flatMap { parseResponse($0) }
     }
 
     // MARK: - Wire format
