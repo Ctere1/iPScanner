@@ -89,6 +89,16 @@ struct HostInspector: View {
 
     // MARK: - Sections
 
+    /// Why the scan thinks this host is what it says it is.
+    private func classificationReason(_ host: Host) -> String {
+        let result = host.classification
+        guard !result.matchedRuleIDs.isEmpty else { return result.confidence.label }
+        return """
+        \(result.confidence.label) — score \(result.score)
+        Matched: \(result.matchedRuleIDs.joined(separator: ", "))
+        """
+    }
+
     @ViewBuilder
     private func header(host: Host) -> some View {
         let kind = host.deviceType
@@ -106,7 +116,20 @@ struct HostInspector: View {
                     Text(v).font(.subheadline).foregroundStyle(.secondary).lineLimit(2)
                 }
                 if kind != .unknown {
-                    Text(kind.label).font(.caption).foregroundStyle(.tertiary)
+                    // The confidence is shown, not just the verdict. A device the scan is guessing
+                    // at and one it is certain of should not look identical — and the tooltip names
+                    // the rules that fired, so a wrong answer can be argued with rather than just
+                    // disbelieved.
+                    HStack(spacing: 4) {
+                        Text(kind.label)
+                        if host.classification.confidence < .high {
+                            Text("· \(host.classification.confidence.label)")
+                                .foregroundStyle(.quaternary)
+                        }
+                    }
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+                    .help(classificationReason(host))
                 }
             }
             Spacer(minLength: 0)

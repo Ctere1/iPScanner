@@ -4,7 +4,9 @@ import AppKit
 
 struct ContentView: View {
     @State private var controller = ScanController()
-    @State private var mdns = MDNSDiscovery()
+    /// The controller's, not a second one. Two instances would mean two Bonjour browsers, and —
+    /// worse — the classifier reading the controller's while the UI showed this one's.
+    private var mdns: MDNSDiscovery { controller.mdns }
     /// Carries the hosts to scan, captured when the menu item was clicked.
     ///
     /// A sheet, not a popover: the trigger is often a context menu or the overflow menu, neither of
@@ -174,6 +176,13 @@ struct ContentView: View {
             controller.rescanInterval = RescanInterval(rawValue: rescanIntervalRaw) ?? .off
             controller.detectDefaultSubnetIfNeeded()
             mdns.start()
+        }
+        // Bonjour answers on its own schedule — a device can announce itself well after a scan has
+        // finished, and the browser keeps running for the app's lifetime. Without this, evidence
+        // that arrives late is evidence that never counts: the row keeps whatever verdict it had
+        // when the scan happened to pass over it.
+        .onChange(of: mdns.servicesByIP) {
+            controller.reclassifyHosts()
         }
     }
 
