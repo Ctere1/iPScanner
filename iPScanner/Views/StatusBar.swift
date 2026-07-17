@@ -163,8 +163,10 @@ struct StatusBar: View {
             }
         }
         .font(.system(size: 12))
-        .padding(.horizontal, 12)
-        .padding(.vertical, 6)
-        .background(.bar)
+        .padding(.horizontal, DesignTokens.Spacing.section)
+        .padding(.vertical, DesignTokens.Spacing.tight + 2)
+        // `.bar` was `.headerView` by another name. Naming it makes it the same decision as the
+        // toolbar at the other end of the window, rather than two that happen to agree.
+        .glass(.statusBar)
     }
 }

@@ -24,19 +24,38 @@ struct HostInspector: View {
     /// against the live `label` compared against the *new* host's label by commit time.
     @State private var labelSnapshot: String?
 
+    /// Header, scrolling body, footer — the shape of a macOS sheet.
+    ///
+    /// This was one ScrollView with everything inside it, including the header, which is the shape
+    /// of a *sidebar*: the whole panel scrolled as one, so the title slid away with the content and
+    /// the only way out was an X in the top corner. As a modal it read as a long strip that had been
+    /// cut off rather than a dialog. Now the title stays put, the body scrolls under it, and the way
+    /// out is a Done button where a sheet's buttons belong.
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 14) {
-                hostSections(host)
+        VStack(spacing: 0) {
+            header(host: host)
+                .padding(.horizontal, DesignTokens.Spacing.surface)
+                .padding(.top, DesignTokens.Spacing.surface)
+                .padding(.bottom, DesignTokens.Spacing.section)
+            Divider()
+            ScrollView {
+                VStack(alignment: .leading, spacing: DesignTokens.Spacing.section) {
+                    bodySections(host)
+                }
+                .padding(DesignTokens.Spacing.surface)
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .padding(16)
-            .frame(maxWidth: .infinity, alignment: .leading)
+            // Don't offer to scroll something that already fits. The default bounces regardless,
+            // which reads as "there is more below" on a panel where there is not.
+            .scrollBounceBehavior(.basedOnSize)
+            Divider()
+            footer
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         // No background of its own. This used to carry .ultraThinMaterial on the grounds that "the
         // panel sits over the table" — true when it was an HStack sibling overlapping the content,
         // false now that it is a sheet. A sheet is already its own surface, and a material inside
-        // one samples the sheet's own background and renders as dead grey.
+        // one samples the sheet's own background and renders as dead grey. ContentView gives the
+        // sheet its glass through .presentationBackground.
         .onAppear { beginEditing() }
         .onDisappear { commitLabelIfChanged() }
         .onChange(of: host.id) { _, _ in
@@ -53,10 +72,9 @@ struct HostInspector: View {
         editingAnchor = anchor
     }
 
+    /// Everything below the header. The header is not in here because it does not scroll.
     @ViewBuilder
-    private func hostSections(_ host: Host) -> some View {
-        header(host: host)
-        Divider()
+    private func bodySections(_ host: Host) -> some View {
         labelSection(host: host)
         Divider()
         infoSection(host: host)
@@ -68,6 +86,21 @@ struct HostInspector: View {
         PingMonitorView(ip: host.ip)
         Divider()
         actionsSection(host: host)
+    }
+
+    /// Done, bottom-trailing, default action — where macOS puts a sheet's way out, and what ⏎ hits.
+    ///
+    /// This replaces an X in the top-right corner, which is a *panel's* affordance: it meant "hide
+    /// this thing that lives here". A sheet is opened for one host and dismissed, so the button says
+    /// what it does.
+    private var footer: some View {
+        HStack {
+            Spacer()
+            Button("Done", action: onClose)
+                .keyboardShortcut(.defaultAction)
+        }
+        .padding(.horizontal, DesignTokens.Spacing.surface)
+        .padding(.vertical, DesignTokens.Spacing.section)
     }
 
 
@@ -107,12 +140,11 @@ struct HostInspector: View {
     private func header(host: Host) -> some View {
         let kind = host.deviceType
         HStack(alignment: .top, spacing: 12) {
-            Image(systemName: kind.sfSymbol)
-                .font(.system(size: 32))
-                .foregroundStyle(.tint)
-                .frame(width: 48, height: 48)
-                .background(Color.accentColor.opacity(0.15))
-                .clipShape(RoundedRectangle(cornerRadius: 8))
+            AccentTile(size: 48) {
+                Image(systemName: kind.sfSymbol)
+                    .font(.system(size: 32))
+                    .foregroundStyle(.tint)
+            }
             VStack(alignment: .leading, spacing: 2) {
                 Text(host.ip).font(.title3).fontWeight(.medium).monospaced()
                     .textSelection(.enabled)
@@ -137,15 +169,6 @@ struct HostInspector: View {
                 }
             }
             Spacer(minLength: 0)
-            // The panel's only visible way out. It had none: no button, no Escape, no menu item —
-            // the only exits were ⌘-clicking the row or clicking empty space below the table.
-            Button(action: onClose) {
-                Image(systemName: "xmark")
-                    .foregroundStyle(.secondary)
-            }
-            .buttonStyle(.plain)
-            .help("Hide inspector (⌥⌘I)")
-            .accessibilityLabel("Hide inspector")
         }
     }
 
@@ -225,13 +248,13 @@ struct HostInspector: View {
             VStack(alignment: .leading, spacing: 3) {
                 ForEach(services, id: \.self) { svc in
                     HStack(spacing: 6) {
-                        Text(svc.displayType)
-                            .font(.caption)
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 1)
-                            .background(Color.accentColor.opacity(0.15))
-                            .foregroundStyle(.tint)
-                            .clipShape(Capsule())
+                        AccentTile(cornerRadius: DesignTokens.Radius.small) {
+                            Text(svc.displayType)
+                                .font(.caption)
+                                .foregroundStyle(.tint)
+                                .padding(.horizontal, DesignTokens.Spacing.tight + 2)
+                                .padding(.vertical, 1)
+                        }
                         Text(svc.name)
                             .font(.caption)
                             .lineLimit(1)
@@ -245,59 +268,57 @@ struct HostInspector: View {
 
     @ViewBuilder
     private func actionsSection(host: Host) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: DesignTokens.Spacing.inline) {
             actionGroup("Connect") {
-                Button { HostActions.openBrowser(ip: host.ip) } label: {
-                    Label("HTTP", systemImage: "safari")
+                ActionButton("HTTP", systemImage: "safari") {
+                    HostActions.openBrowser(ip: host.ip)
                 }
-                Button { HostActions.openBrowser(ip: host.ip, scheme: "https") } label: {
-                    Label("HTTPS", systemImage: "lock.shield")
+                ActionButton("HTTPS", systemImage: "lock.shield") {
+                    HostActions.openBrowser(ip: host.ip, scheme: "https")
                 }
-                Button { HostActions.openSSH(ip: host.ip) } label: {
-                    Label("SSH", systemImage: "terminal")
+                ActionButton("SSH", systemImage: "terminal") {
+                    HostActions.openSSH(ip: host.ip)
                 }
-                Button { HostActions.openVNC(ip: host.ip) } label: {
-                    Label("VNC", systemImage: "rectangle.connected.to.line.below")
+                ActionButton("VNC", systemImage: "rectangle.connected.to.line.below") {
+                    HostActions.openVNC(ip: host.ip)
                 }
-                Button { HostActions.openRDP(ip: host.ip) } label: {
-                    Label("RDP", systemImage: "display")
+                ActionButton("RDP", systemImage: "display") {
+                    HostActions.openRDP(ip: host.ip)
                 }
-                Button { HostActions.openSMB(ip: host.ip) } label: {
-                    Label("SMB", systemImage: "externaldrive.connected.to.line.below")
+                ActionButton("SMB", systemImage: "externaldrive.connected.to.line.below") {
+                    HostActions.openSMB(ip: host.ip)
                 }
-                Button { HostActions.openAFP(ip: host.ip) } label: {
-                    Label("AFP", systemImage: "externaldrive")
+                ActionButton("AFP", systemImage: "externaldrive") {
+                    HostActions.openAFP(ip: host.ip)
                 }
-                Button { HostActions.openTelnet(ip: host.ip) } label: {
-                    Label("Telnet", systemImage: "terminal.fill")
+                ActionButton("Telnet", systemImage: "terminal.fill") {
+                    HostActions.openTelnet(ip: host.ip)
                 }
             }
 
             actionGroup("Tools") {
-                Button { HostActions.pingInTerminal(ip: host.ip) } label: {
-                    Label("Ping", systemImage: "wave.3.right")
+                ActionButton("Ping", systemImage: "wave.3.right") {
+                    HostActions.pingInTerminal(ip: host.ip)
                 }
                 if let mac = host.mac {
-                    Button {
+                    ActionButton("Wake", systemImage: "power.circle.fill") {
                         Task { await HostActions.wakeOnLAN(mac: mac) }
-                    } label: {
-                        Label("Wake", systemImage: "power.circle.fill")
                     }
                 }
             }
 
             actionGroup("Copy") {
-                Button { HostActions.copy(host.ip) } label: {
-                    Label("IP", systemImage: "doc.on.doc")
+                ActionButton("IP", systemImage: "doc.on.doc") {
+                    HostActions.copy(host.ip)
                 }
                 if let hostname = host.hostname {
-                    Button { HostActions.copy(hostname) } label: {
-                        Label("Hostname", systemImage: "doc.on.doc")
+                    ActionButton("Hostname", systemImage: "doc.on.doc") {
+                        HostActions.copy(hostname)
                     }
                 }
                 if let mac = host.mac {
-                    Button { HostActions.copy(mac.uppercased()) } label: {
-                        Label("MAC", systemImage: "doc.on.doc")
+                    ActionButton("MAC", systemImage: "doc.on.doc") {
+                        HostActions.copy(mac.uppercased())
                     }
                 }
             }
@@ -309,21 +330,45 @@ struct HostInspector: View {
         VStack(alignment: .leading, spacing: 4) {
             Text(title).font(.caption).foregroundStyle(.secondary)
             LazyVGrid(
-                columns: [
-                    GridItem(.flexible(minimum: 60), spacing: 6),
-                    GridItem(.flexible(minimum: 60), spacing: 6),
-                    GridItem(.flexible(minimum: 60), spacing: 6)
-                ],
-                spacing: 6
+                columns: Array(
+                    repeating: GridItem(.flexible(minimum: 60), spacing: DesignTokens.Spacing.tight + 2),
+                    count: 3
+                ),
+                spacing: DesignTokens.Spacing.tight + 2
             ) {
                 content()
             }
             .buttonStyle(.bordered)
             .controlSize(.small)
-            // Each button fills its cell. Without this they hug their own labels, so "HTTP" came
-            // out half the width of "Telnet" and a grid of them read as ragged rather than as a
-            // grid — the columns were even, the buttons inside them were not.
-            .frame(maxWidth: .infinity)
+        }
+    }
+}
+
+/// One button in an `actionGroup` grid.
+///
+/// Exists for the `.frame(maxWidth: .infinity)`, which has to be on the *label* to do anything. It
+/// used to be on the LazyVGrid, under a comment explaining that it made each button fill its cell —
+/// which is what it was for, and not what it did: it stretched the grid, and left the buttons inside
+/// hugging their own text. So "HTTP" rendered half the width of "Telnet" and the grid read as ragged
+/// even though its columns were even, which is precisely the bug the comment claimed to have fixed.
+///
+/// A type rather than a modifier repeated thirteen times, so the next button added to a group cannot
+/// be the one that forgets.
+private struct ActionButton: View {
+    let title: LocalizedStringKey
+    let systemImage: String
+    let action: () -> Void
+
+    init(_ title: LocalizedStringKey, systemImage: String, action: @escaping () -> Void) {
+        self.title = title
+        self.systemImage = systemImage
+        self.action = action
+    }
+
+    var body: some View {
+        Button(action: action) {
+            Label(title, systemImage: systemImage)
+                .frame(maxWidth: .infinity)
         }
     }
 }

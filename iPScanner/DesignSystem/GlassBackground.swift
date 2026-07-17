@@ -20,6 +20,7 @@ struct GlassBackground: View {
 
     var body: some View {
         surface
+            .overlay { scrim }
             .overlay {
                 if let stroke = config.stroke {
                     shape.strokeBorder(stroke.color, lineWidth: stroke.width)
@@ -43,6 +44,23 @@ struct GlassBackground: View {
                 isEmphasized: config.isEmphasized
             )
             .clipShape(shape)
+        }
+    }
+
+    /// The `.highContrast` scrim.
+    ///
+    /// It lives here, on top of the material and inside the background, rather than in the `.glass`
+    /// modifier where it started. The move is what makes this view the *whole* surface: something
+    /// that needs a glass background but cannot use `.glass` — `.presentationBackground` on a sheet,
+    /// for one — would otherwise get the material and silently lose the readability layer that makes
+    /// the material safe to put text on.
+    ///
+    /// Skipped entirely under Reduce Transparency: `surface` is already an opaque fill there, and
+    /// scrimming an opaque fill with a translucent copy of itself only darkens it.
+    @ViewBuilder
+    private var scrim: some View {
+        if config.contentTint == .highContrast, !reduceTransparency {
+            shape.fill(config.opaqueFallback.opacity(DesignTokens.Opacity.scrim))
         }
     }
 }

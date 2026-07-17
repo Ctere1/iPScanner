@@ -17,7 +17,10 @@ struct GlassGallery: View {
         .init(id: "sidebar", config: .sidebar),
         .init(id: "toolbar", config: .toolbar),
         .init(id: "statusBar", config: .statusBar),
-        .init(id: "panel", config: .panel),
+        // Rendered .withinWindow here. The real thing is .behindWindow, which needs to be its own
+        // window to have anything behind it — so the sheet is the only place it looks like itself,
+        // and this row shows the material and the scrim rather than the full effect.
+        .init(id: "sheetPanel", config: .sheetPanel),
         .init(id: "popover", config: .popover),
         .init(id: "card", config: .card),
     ]

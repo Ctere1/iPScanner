@@ -37,15 +37,27 @@ extension GlassConfig {
         opaqueFallback: Color(nsColor: .windowBackgroundColor)
     )
 
-    /// The host inspector.
+    /// The host detail sheet.
     ///
-    /// `.highContrast` is not a preference here. This panel is a column of monospaced IPs, MACs and
-    /// anchors — precisely the content that falls apart over live blur.
-    static let panel = GlassConfig(
-        material: .contentBackground,
+    /// The one place `.behindWindow` is right, and for a reason the others are not: a sheet is its
+    /// own window, so "behind" means the app window it is covering — the table it was opened from,
+    /// blurred underneath it. That is the actual glassmorphism idea, and here it costs nothing,
+    /// because the surface being made non-opaque is a 380pt panel rather than the window that
+    /// repaints a 254-row table on every scan tick.
+    ///
+    /// `.hudWindow` over `.popover`: this is a floating panel, not a tooltip, and the HUD material
+    /// is the one AppKit tunes for a surface with its own content rather than a callout of someone
+    /// else's.
+    ///
+    /// `.highContrast` is not a preference. This panel is a column of monospaced IPs, MACs and
+    /// anchors — precisely the content that falls apart over live blur — and the blur under it is
+    /// now a live table rather than flat chrome, which is the worst backdrop of the lot.
+    static let sheetPanel = GlassConfig(
+        material: .hudWindow,
+        blending: .behindWindow,
         cornerRadius: 0,
         contentTint: .highContrast,
-        opaqueFallback: Color(nsColor: .controlBackgroundColor)
+        opaqueFallback: Color(nsColor: .windowBackgroundColor)
     )
 
     /// Popovers: the subnet calculator, the warnings list, the diff summary.

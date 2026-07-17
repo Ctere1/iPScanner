@@ -193,7 +193,17 @@ struct ContentView: View {
                     controller.setLabel(newValue, forAnchor: anchor)
                 }
             )
-            .frame(width: 380, height: 620)
+            // Wider and shorter than the 320pt column this panel was built for. The column's shape
+            // was imposed by the window; a sheet has no such excuse, and 380x620 inherited the
+            // proportions of a sidebar — a narrow strip that wrapped every vendor name and service
+            // onto two lines and then needed 620pt of height to show the result. Width is the
+            // cheaper axis here: it buys back the wrapping rather than adding scroll.
+            .frame(width: 460, height: 560)
+            // .presentationBackground, not .glass: a sheet draws its own surface, and .background
+            // would put the material underneath it where it samples the sheet and comes out grey.
+            // This replaces that surface, which is also what lets `.sheetPanel` use .behindWindow —
+            // "behind" a sheet is the table it was opened from.
+            .presentationBackground { GlassBackground(config: .sheetPanel) }
         }
     }
 
@@ -299,6 +309,10 @@ struct ContentView: View {
             }
         }
         .listStyle(.sidebar)
+        // .scrollContentBackground(.hidden) first, or the List draws its own opaque backing over
+        // the material and the glass is there but never seen.
+        .scrollContentBackground(.hidden)
+        .glass(.sidebar)
     }
 
     @ViewBuilder
@@ -376,8 +390,11 @@ struct ContentView: View {
             toolbarRow(.tight)
             toolbarRow(.minimal)
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
+        .padding(.horizontal, DesignTokens.Spacing.section)
+        .padding(.vertical, DesignTokens.Spacing.inline)
+        // Applied to the whole strip, not inside toolbarRow: that HStack is already a four-way
+        // ViewThatFits and is one of the expressions the type-checker struggles with.
+        .glass(.toolbar)
     }
 
     @ViewBuilder
@@ -815,11 +832,11 @@ struct ContentView: View {
             .buttonStyle(.plain)
             .help("Clear imported list")
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 6)
+        .padding(.horizontal, DesignTokens.Spacing.inline)
+        .padding(.vertical, DesignTokens.Spacing.tight + 2)
         .background(
-            RoundedRectangle(cornerRadius: 6)
-                .fill(Color.accentColor.opacity(0.10))
+            RoundedRectangle(cornerRadius: DesignTokens.Radius.small, style: .continuous)
+                .fill(Color.accentColor.opacity(DesignTokens.Opacity.accentFillSubtle))
         )
         .frame(maxWidth: 380, alignment: .leading)
     }
