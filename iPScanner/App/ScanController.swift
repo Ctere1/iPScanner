@@ -71,6 +71,17 @@ final class ScanController {
 
     var hosts: [Host] { hostStore.hosts }
 
+    /// Bonjour. Owned here rather than by the view, which is the change that lets any of it reach
+    /// the classifier: as a view's `@State` its results could only ever be displayed, so the
+    /// strongest evidence on a LAN — `_device-info._tcp`'s model, `_googlecast._tcp`, `_ipp._tcp` —
+    /// was collected and then discarded.
+    let mdns = MDNSDiscovery()
+
+    @ObservationIgnored private let classifier: DeviceClassifier
+
+    /// The subnet's default gateway, if known. Being the gateway is strong router evidence.
+    @ObservationIgnored private var gatewayIP: String?
+
     private(set) var state: State = .idle
     private(set) var elapsed: TimeInterval = 0
     private(set) var lastError: String?
@@ -88,7 +99,8 @@ final class ScanController {
         labelStore: LabelStore? = nil,
         savedRangeStore: SavedRangeStore? = nil,
         scheduler: Scheduling? = nil,
-        makeScanner: (@Sendable (ScanProfile) -> any HostDiscovering)? = nil
+        makeScanner: (@Sendable (ScanProfile) -> any HostDiscovering)? = nil,
+        classifier: DeviceClassifier? = nil
     ) {
         // Built here rather than as default arguments: a default argument is evaluated in the
         // caller's isolation, and these are @MainActor.
@@ -98,6 +110,22 @@ final class ScanController {
         self.scheduler = clock
         self.rescanScheduler = RescanScheduler(scheduler: clock)
         self.makeScanner = makeScanner ?? { NetworkScanner(profile: $0) }
+        self.classifier = classifier ?? .live
+    }
+
+    /// Builds the evidence for one host and asks the rule table.
+    private func classification(for host: Host) -> DeviceClassification {
+        classifier.classify(DeviceSignals.from(
+            host: host,
+            mdnsTypes: mdns.serviceTypes(for: host.ip),
+            mdnsTXT: mdns.txt(for: host.ip),
+            gateway: gatewayIP
+        ))
+    }
+
+    /// Re-runs classification over every row. Called after a mutation rather than on read.
+    func reclassifyHosts() {
+        hostStore.reclassify { classification(for: $0) }
     }
 
     @ObservationIgnored private let scheduler: Scheduling
@@ -221,6 +249,9 @@ final class ScanController {
         }
 
         lastError = nil
+        // Resolved per run: the machine can move between networks, and a gateway from the last
+        // subnet would name the wrong host on this one.
+        gatewayIP = NetworkInterface.defaultGateway()
         // A deep-profile port scan from the previous run would otherwise keep writing into the
         // host list this line clears, and keep `portScanInProgress` set against the new run.
         cancelPortScan()
@@ -584,6 +615,10 @@ final class ScanController {
             mergeWarning(w)
         case .host(let h):
             hostStore.upsert(h)
+            // Reclassify the row this event touched. Each phase adds evidence — discovery, then
+            // enrichment's vendor, then the fingerprint's ports — so the verdict is re-derived as
+            // the picture fills in rather than guessed once from the first thing seen.
+            hostStore.reclassify(ip: h.ip) { classification(for: $0) }
         case .done:
             elapsedWork?.cancel()
             elapsedWork = nil

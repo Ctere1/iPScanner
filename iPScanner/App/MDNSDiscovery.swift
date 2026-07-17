@@ -10,6 +10,13 @@ final class MDNSDiscovery {
         let serviceType: String
         let name: String
         let ip: String
+        /// The service's TXT record, keys lowercased.
+        ///
+        /// `_device-info._tcp` puts the hardware identifier here — `model=MacBookPro18,3`,
+        /// `model=iPhone15,2`, `model=AudioAccessory5,1` — which is the single most precise
+        /// statement a device on a LAN makes about what it is. It arrives with the browse result
+        /// at no extra cost, and used to be thrown away.
+        var txt: [String: String] = [:]
     }
 
     static let serviceTypes: [(type: String, label: String)] = [
@@ -103,11 +110,35 @@ final class MDNSDiscovery {
             guard case .service(let name, let type, let domain, _) = result.endpoint else { continue }
             let key = EndpointKey(name: name, type: type, domain: domain)
             guard seenEndpoints.insert(key).inserted else { continue }
-            resolveService(name: name, type: type, domain: domain, displayType: displayType)
+            resolveService(
+                name: name,
+                type: type,
+                domain: domain,
+                displayType: displayType,
+                txt: Self.txtDictionary(result.metadata)
+            )
         }
     }
 
-    private func resolveService(name: String, type: String, domain: String, displayType: String) {
+    /// Bonjour hands the TXT record over with the browse result — resolving it costs nothing extra.
+    static func txtDictionary(_ metadata: NWBrowser.Result.Metadata) -> [String: String] {
+        guard case .bonjour(let record) = metadata else { return [:] }
+        var out: [String: String] = [:]
+        for (key, entry) in record {
+            if case .string(let value) = entry {
+                out[key.lowercased()] = value
+            }
+        }
+        return out
+    }
+
+    private func resolveService(
+        name: String,
+        type: String,
+        domain: String,
+        displayType: String,
+        txt: [String: String]
+    ) {
         let endpoint = NWEndpoint.service(name: name, type: type, domain: domain, interface: nil)
         let connection = NWConnection(to: endpoint, using: .tcp)
         pendingConnections.append(connection)
@@ -137,7 +168,8 @@ final class MDNSDiscovery {
                                 displayType: displayType,
                                 serviceType: type,
                                 name: name,
-                                ip: ip
+                                ip: ip,
+                                txt: txt
                             )
                         )
                     } else {
@@ -157,6 +189,23 @@ final class MDNSDiscovery {
             }
         }
         connection.start(queue: resolveQueue)
+    }
+
+    /// Bonjour service types advertised by `ip`, e.g. `_ipp._tcp`.
+    func serviceTypes(for ip: String) -> Set<String> {
+        Set(services(for: ip).map(\.serviceType))
+    }
+
+    /// TXT records for `ip`, merged across its services.
+    ///
+    /// `_device-info._tcp` carries `model=`, which names Apple hardware exactly — the reason the
+    /// TXT record is captured at all.
+    func txt(for ip: String) -> [String: String] {
+        var merged: [String: String] = [:]
+        for record in services(for: ip) {
+            merged.merge(record.txt) { existing, _ in existing }
+        }
+        return merged
     }
 
     /// Best human-readable name Bonjour knows for `ip`, if any. Service instance names are what

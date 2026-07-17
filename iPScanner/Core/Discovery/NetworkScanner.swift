@@ -40,16 +40,10 @@ struct NetworkScanner: HostDiscovering {
     }
 
     func scan(addresses: [String]) -> AsyncStream<ScanEvent> {
-        let useTCPFallback = profile.useTCPFallback
-        let includeNetBIOS = profile.includeNetBIOS
+        let options = profile.options
         return AsyncStream { continuation in
             let task = Task.detached(priority: .userInitiated) {
-                await Self.run(
-                    addresses: addresses,
-                    useTCPFallback: useTCPFallback,
-                    includeNetBIOS: includeNetBIOS,
-                    continuation: continuation
-                )
+                await Self.run(addresses: addresses, options: options, continuation: continuation)
             }
             continuation.onTermination = { _ in
                 task.cancel()
@@ -59,8 +53,7 @@ struct NetworkScanner: HostDiscovering {
 
     private static func run(
         addresses: [String],
-        useTCPFallback: Bool,
-        includeNetBIOS: Bool = false,
+        options: ScanOptions,
         continuation: AsyncStream<ScanEvent>.Continuation
     ) async {
         let total = addresses.count
@@ -74,7 +67,7 @@ struct NetworkScanner: HostDiscovering {
         await withWindowedTaskGroup(
             over: addresses,
             limit: Self.pingConcurrency,
-            operation: { ip in (ip, await Self.discover(ip, useTCPFallback: useTCPFallback)) }
+            operation: { ip in (ip, await Self.discover(ip, useTCPFallback: options.useTCPFallback)) }
         ) { ip, result in
             scanned += 1
             continuation.yield(.progress(scanned: scanned, total: total))
@@ -116,7 +109,7 @@ struct NetworkScanner: HostDiscovering {
                 let found = await HostEnricher.enrich(
                     ip: entry.ip,
                     arpTable: arpTable,
-                    includeNetBIOS: includeNetBIOS,
+                    includeNetBIOS: options.includeNetBIOS,
                     vendors: oui
                 )
                 return Host(
@@ -136,6 +129,36 @@ struct NetworkScanner: HostDiscovering {
         ) { host in
             continuation.yield(.host(host))
             return true
+        }
+
+        if Task.isCancelled {
+            continuation.yield(.done)
+            continuation.finish()
+            return
+        }
+
+        // --- Phase 3: fingerprint (identify what each alive host is) ---
+        //
+        // The reason this phase exists: before it, a host that answered a ping was never
+        // port-probed at all on the default profile — the TCP fallback only runs when ICMP
+        // *fails*. So the classifier saw a vendor and a hostname and nothing else, and most
+        // devices came back unidentified. This costs one bounded round per alive host, and only
+        // ever runs against hosts already known to be up.
+        if !options.fingerprintPorts.isEmpty, !alive.isEmpty {
+            let ports = options.fingerprintPorts
+            await withWindowedTaskGroup(
+                over: alive.map(\.ip),
+                limit: Self.enrichConcurrency,
+                operation: { ip in (ip, await PortScanner.probe(ip, ports: ports)) }
+            ) { ip, open in
+                continuation.yield(.host(Host(
+                    ip: ip,
+                    openPorts: open,
+                    scannedPorts: ports,
+                    status: .alive
+                )))
+                return true
+            }
         }
 
         continuation.yield(.done)

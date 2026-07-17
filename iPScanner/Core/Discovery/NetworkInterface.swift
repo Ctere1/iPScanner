@@ -8,6 +8,59 @@ struct NetworkInterfaceInfo: Hashable {
 }
 
 enum NetworkInterface {
+    /// The IPv4 default gateway, if there is one.
+    ///
+    /// Worth the routing-table walk because on a LAN scan this is the single best router evidence
+    /// available: the host that everything leaves through is the router, and no vendor string or
+    /// hostname guess comes close to that.
+    ///
+    /// Reads the kernel routing table via sysctl rather than shelling out to `netstat -rn` — the
+    /// same reason `activeInterfaces` walks `getifaddrs` instead of parsing `ifconfig`.
+    static func defaultGateway() -> String? {
+        // Ask for the IPv4 route table, gateways only.
+        var mib: [Int32] = [CTL_NET, PF_ROUTE, 0, AF_INET, NET_RT_FLAGS, RTF_GATEWAY]
+        var size = 0
+        guard sysctl(&mib, u_int(mib.count), nil, &size, nil, 0) == 0, size > 0 else { return nil }
+
+        var buffer = [UInt8](repeating: 0, count: size)
+        guard sysctl(&mib, u_int(mib.count), &buffer, &size, nil, 0) == 0 else { return nil }
+
+        return buffer.withUnsafeBytes { raw -> String? in
+            guard let base = raw.baseAddress else { return nil }
+            var offset = 0
+            while offset < size {
+                let header = base.advanced(by: offset).assumingMemoryBound(to: rt_msghdr.self)
+                let messageLength = Int(header.pointee.rtm_msglen)
+                guard messageLength > 0 else { return nil }
+                defer { offset += messageLength }
+
+                // The default route is the one whose destination is 0.0.0.0.
+                let flags = header.pointee.rtm_flags
+                guard flags & RTF_GATEWAY != 0,
+                      header.pointee.rtm_addrs & RTA_DST != 0,
+                      header.pointee.rtm_addrs & RTA_GATEWAY != 0 else { continue }
+
+                // Addresses follow the header, packed in RTA_* order, each self-describing its
+                // length — so the gateway is reached by stepping over the destination.
+                var cursor = base.advanced(by: offset + MemoryLayout<rt_msghdr>.stride)
+                let destination = cursor.assumingMemoryBound(to: sockaddr.self)
+                guard destination.pointee.sa_family == UInt8(AF_INET) else { continue }
+                let destinationIn = cursor.assumingMemoryBound(to: sockaddr_in.self)
+                guard destinationIn.pointee.sin_addr.s_addr == 0 else { continue }  // 0.0.0.0 only
+
+                let destinationLength = Int(destination.pointee.sa_len)
+                // Each address is padded to a 4-byte boundary; a zero length still consumes one.
+                cursor = cursor.advanced(by: destinationLength == 0 ? 4 : (destinationLength + 3) & ~3)
+
+                let gateway = cursor.assumingMemoryBound(to: sockaddr.self)
+                guard gateway.pointee.sa_family == UInt8(AF_INET) else { continue }
+                let gatewayIn = cursor.assumingMemoryBound(to: sockaddr_in.self)
+                return IPv4.string(from: UInt32(bigEndian: gatewayIn.pointee.sin_addr.s_addr))
+            }
+            return nil
+        }
+    }
+
     static func activeInterfaces() -> [NetworkInterfaceInfo] {
         var results: [NetworkInterfaceInfo] = []
         var head: UnsafeMutablePointer<ifaddrs>?

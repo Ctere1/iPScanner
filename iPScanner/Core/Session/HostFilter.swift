@@ -44,7 +44,9 @@ struct HostFilter: Equatable, Sendable {
             visible = visible.filter { $0.vendor?.isEmpty == false }
         }
         if identifiedDevice {
-            visible = visible.filter { DeviceClassifier.classify($0) != .unknown }
+            // A field read. This used to call the classifier, from inside a computed property that
+            // SwiftUI re-evaluates on every render — so the whole rule table ran per row per frame.
+            visible = visible.filter { $0.deviceType != .unknown }
         }
         if !query.isEmpty {
             let q = query.lowercased()

@@ -20,23 +20,20 @@ enum ScanProfile: String, CaseIterable, Identifiable, Sendable {
         case .quick:
             "ICMP ping only — fastest, misses ICMP-blocked hosts (e.g. Windows Firewall)."
         case .standard:
-            "Ping + TCP fallback — finds hosts that block ICMP."
+            "Ping + TCP fallback + device fingerprint on alive hosts — identifies what it finds."
         case .deep:
-            "Standard + auto port scan with banner fetch on alive hosts."
+            "Standard + full port scan with banner fetch on alive hosts."
         }
     }
 
-    var useTCPFallback: Bool {
-        self != .quick
-    }
+    /// The capability flags now live on `options`; these read through so existing call sites keep
+    /// working.
 
-    var autoPortScan: Bool {
-        self == .deep
-    }
+    var useTCPFallback: Bool { options.useTCPFallback }
+
+    var autoPortScan: Bool { options.autoPortScan }
 
     /// Standard / Deep run an extra UDP-137 query to pull NetBIOS computer name and workgroup.
     /// Quick skips it to keep ICMP-only discovery fast.
-    var includeNetBIOS: Bool {
-        self != .quick
-    }
+    var includeNetBIOS: Bool { options.includeNetBIOS }
 }

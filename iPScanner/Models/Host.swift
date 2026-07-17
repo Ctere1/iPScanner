@@ -32,6 +32,17 @@ struct Host: Identifiable, Hashable, Sendable {
     var serviceTitle: String?
     var status: Status
 
+    /// What this host is, and how sure we are.
+    ///
+    /// Stored rather than derived on read. It used to be recomputed at each of three call sites —
+    /// one of them inside a computed property SwiftUI re-evaluates on every render, so the whole
+    /// rule table ran once per row per frame. It is also not derivable from a `Host` alone: the
+    /// Bonjour evidence and the gateway address live outside it, which is why the classifier
+    /// takes `DeviceSignals` and the answer is folded back in here.
+    var classification: DeviceClassification = .unknown
+
+    var deviceType: DeviceType { classification.type }
+
     init(
         id: UUID = UUID(),
         ip: String,

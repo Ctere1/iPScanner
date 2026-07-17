@@ -29,7 +29,7 @@ struct HostTable: View {
             .width(20)
 
             TableColumn("IP", value: \.ipNumeric) { host in
-                let kind = DeviceClassifier.classify(host)
+                let kind = host.deviceType
                 HStack(spacing: 6) {
                     Image(systemName: kind.sfSymbol)
                         .font(.caption)

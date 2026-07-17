@@ -91,7 +91,7 @@ struct HostInspector: View {
 
     @ViewBuilder
     private func header(host: Host) -> some View {
-        let kind = DeviceClassifier.classify(host)
+        let kind = host.deviceType
         HStack(alignment: .top, spacing: 12) {
             Image(systemName: kind.sfSymbol)
                 .font(.system(size: 32))

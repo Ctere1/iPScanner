@@ -83,4 +83,22 @@ struct HostStore: Sendable {
         hosts = []
         indexByIp = [:]
     }
+
+    /// Recomputes every host's classification.
+    ///
+    /// Takes a closure because the evidence is not all here: Bonjour and the gateway address live
+    /// outside the store, and outside Core entirely. Run after a mutation, not on read — the
+    /// verdict used to be derived inside a computed property, so the rule table ran once per row
+    /// per render.
+    mutating func reclassify(_ classify: (Host) -> DeviceClassification) {
+        for index in hosts.indices {
+            hosts[index].classification = classify(hosts[index])
+        }
+    }
+
+    /// Reclassifies just the host at `ip` — the merge path, where one event changed one row.
+    mutating func reclassify(ip: String, _ classify: (Host) -> DeviceClassification) {
+        guard let index = indexByIp[ip], hosts.indices.contains(index) else { return }
+        hosts[index].classification = classify(hosts[index])
+    }
 }

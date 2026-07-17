@@ -6,6 +6,23 @@ enum PortScanner {
     static let defaultPortsInput = "22, 80, 443, 445, 3389, 5900, 8080"
     static let perHostConcurrency = 64
 
+    /// Ports probed on every alive host to work out what it is.
+    ///
+    /// Chosen for what each one *identifies*, not for how common it is. The default scan list above
+    /// is the opposite: it contains 22/80/443/8080, which almost anything with a network stack
+    /// answers, and none of the ports that actually name a device — so a scanned host would collect
+    /// evidence for "server" and nothing else. Printers (9100/515/631), NAS (548/2049/5000),
+    /// cameras (554), Windows (135/139), Plex (32400) and iOS lockdownd (62078) are all here for
+    /// that reason.
+    ///
+    /// One TCP connect each, inside the existing per-host window, so this is one bounded round per
+    /// alive host — not a port scan.
+    static let fingerprintPorts: [Int] = [
+        21, 22, 23, 53, 80, 135, 139, 443, 445, 515, 548, 554, 631,
+        1900, 2049, 3389, 5000, 5001, 5900, 7000, 8008, 8009, 8080,
+        8443, 9100, 32400, 62078
+    ]
+
     static let serviceNames: [Int: String] = [
         20: "ftp-data", 21: "ftp", 22: "ssh", 23: "telnet", 25: "smtp",
         53: "dns", 67: "dhcp", 80: "http", 110: "pop3", 119: "nntp",
