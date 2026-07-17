@@ -41,10 +41,31 @@ struct ScanRange: Hashable {
         return (ranges, nil)
     }
 
+    /// Upper limit on how many addresses a single scan may target.
+    static let maxTargets = 65_536
+
+    /// Total addresses spanned by `ranges`, counted without expanding them.
+    /// Overlapping ranges are counted twice; this is an upper bound, not a deduplicated count.
+    /// Saturates at `Int.max` rather than trapping.
+    static func totalHostCount(_ ranges: [ScanRange]) -> Int {
+        var total = 0
+        for r in ranges where r.upperBound >= r.lowerBound {
+            let (sum, overflow) = total.addingReportingOverflow(r.hostCount)
+            if overflow { return .max }
+            total = sum
+        }
+        return total
+    }
+
     /// Combined unique addresses from multiple ranges, sorted numerically.
-    static func uniqueAddresses(_ ranges: [ScanRange]) -> [String] {
+    /// Returns nil when the ranges span more than `limit` addresses. The count is checked
+    /// before expansion, so an oversized range (`0.0.0.0/0` spans 4.3 billion) is rejected
+    /// rather than allocated.
+    static func uniqueAddresses(_ ranges: [ScanRange], limit: Int = maxTargets) -> [String]? {
+        let bound = totalHostCount(ranges)
+        guard bound <= limit else { return nil }
         var seen = Set<UInt32>()
-        seen.reserveCapacity(ranges.reduce(0) { $0 + $1.hostCount })
+        seen.reserveCapacity(bound)
         for r in ranges where r.upperBound >= r.lowerBound {
             for v in r.lowerBound...r.upperBound { seen.insert(v) }
         }

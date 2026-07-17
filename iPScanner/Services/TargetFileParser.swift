@@ -21,6 +21,7 @@ enum TargetFileParser {
     enum ParseError: Error, LocalizedError {
         case unreadable(URL)
         case noTargets
+        case tooLarge(limit: Int)
 
         var errorDescription: String? {
             switch self {
@@ -28,6 +29,8 @@ enum TargetFileParser {
                 "Could not read \(url.lastPathComponent)."
             case .noTargets:
                 "The file did not contain any valid IP, CIDR, or range entries."
+            case .tooLarge(let limit):
+                "The target list is too large (limit \(limit) addresses). Narrow the ranges or split the file."
             }
         }
     }
@@ -37,10 +40,10 @@ enum TargetFileParser {
               let text = String(data: data, encoding: .utf8) else {
             throw ParseError.unreadable(url)
         }
-        return parse(text: text)
+        return try parse(text: text)
     }
 
-    static func parse(text: String) -> Result {
+    static func parse(text: String, limit: Int = ScanRange.maxTargets) throws -> Result {
         var seen = Set<UInt32>()
         var invalid: [InvalidLine] = []
         var parsedTokenCount = 0
@@ -54,9 +57,15 @@ enum TargetFileParser {
             for token in tokens where !token.isEmpty {
                 if let ipInt = IPv4.uint32(from: token) {
                     seen.insert(ipInt)
+                    guard seen.count <= limit else { throw ParseError.tooLarge(limit: limit) }
                     parsedTokenCount += 1
                 } else if let range = ScanRange.parse(token) {
                     if range.upperBound >= range.lowerBound {
+                        // Checked before expanding: a single `0.0.0.0/0` token spans 4.3 billion
+                        // addresses and would exhaust memory before any post-hoc count could reject it.
+                        guard seen.count + range.hostCount <= limit else {
+                            throw ParseError.tooLarge(limit: limit)
+                        }
                         for v in range.lowerBound...range.upperBound { seen.insert(v) }
                     }
                     parsedTokenCount += 1

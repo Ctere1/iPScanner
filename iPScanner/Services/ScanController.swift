@@ -227,13 +227,15 @@ final class ScanController {
                 lastError = "Enter an IP range (e.g. 10.0.0.0/24)."
                 return
             }
-            addresses = ScanRange.uniqueAddresses(parsed.ranges)
+            // Rejects oversized input before expansion; `imported.targets` is capped by TargetFileParser.
+            guard let expanded = ScanRange.uniqueAddresses(parsed.ranges) else {
+                let span = ScanRange.totalHostCount(parsed.ranges)
+                lastError = "Total target list too large (\(span) addresses, limit \(ScanRange.maxTargets)). Narrow the range."
+                return
+            }
+            addresses = expanded
         }
 
-        if addresses.count > 65_536 {
-            lastError = "Total target list too large (\(addresses.count) hosts). Narrow the range or split the file."
-            return
-        }
         guard !addresses.isEmpty else {
             lastError = "No targets to scan."
             return

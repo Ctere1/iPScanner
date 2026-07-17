@@ -33,9 +33,6 @@ struct IPScannerCLI {
         if targets.isEmpty {
             die("No targets to scan.", exitCode: 1)
         }
-        if targets.count > 65_536 {
-            die("Total target list too large (\(targets.count)). Narrow the range or split the file.", exitCode: 1)
-        }
 
         if verbose {
             stderr.write(Data("ipscanner: scanning \(targets.count) target\(targets.count == 1 ? "" : "s") (profile: \(args.profile.label.lowercased()))\n".utf8))
@@ -140,7 +137,14 @@ struct IPScannerCLI {
         if let badIdx = parsed.firstInvalidIndex {
             throw CLIError.invalidRange("Invalid range chunk #\(badIdx) in \"\(range)\"")
         }
-        return ScanRange.uniqueAddresses(parsed.ranges)
+        // Rejects oversized input before expansion; the `--file` path above is capped by TargetFileParser.
+        guard let targets = ScanRange.uniqueAddresses(parsed.ranges) else {
+            let span = ScanRange.totalHostCount(parsed.ranges)
+            throw CLIError.invalidRange(
+                "Target list too large (\(span) addresses, limit \(ScanRange.maxTargets)). Narrow the range."
+            )
+        }
+        return targets
     }
 
     private static func rangeLabel(args: Arguments) -> String {

@@ -112,20 +112,58 @@ final class ScanRangeTests: XCTestCase {
 
     // MARK: - uniqueAddresses
 
-    func testUniqueAddressesDeduplicates() {
+    func testUniqueAddressesDeduplicates() throws {
         let r1 = ScanRange(cidr: "10.0.0.0/29")!  // hosts 10.0.0.1-10.0.0.6
         let r2 = ScanRange(range: "10.0.0.5-10.0.0.10")!
-        let unique = ScanRange.uniqueAddresses([r1, r2])
+        let unique = try XCTUnwrap(ScanRange.uniqueAddresses([r1, r2]))
         XCTAssertEqual(unique.count, 10)
         XCTAssertEqual(unique.first, "10.0.0.1")
         XCTAssertEqual(unique.last, "10.0.0.10")
     }
 
-    func testUniqueAddressesSorted() {
+    func testUniqueAddressesSorted() throws {
         let r1 = ScanRange(range: "10.0.0.5-10.0.0.6")!
         let r2 = ScanRange(range: "10.0.0.1-10.0.0.2")!
-        let unique = ScanRange.uniqueAddresses([r1, r2])
+        let unique = try XCTUnwrap(ScanRange.uniqueAddresses([r1, r2]))
         XCTAssertEqual(unique, ["10.0.0.1", "10.0.0.2", "10.0.0.5", "10.0.0.6"])
+    }
+
+    // MARK: - Oversized ranges are rejected before expansion
+
+    /// `0.0.0.0/0` spans 4.3 billion addresses. The old code expanded first and checked the count
+    /// after, so this reserved ~34GB and wedged the app before validation could reject it.
+    /// The time assertion is the real subject: correctness here means *not expanding*.
+    func testRejectsWholeInternetWithoutExpanding() {
+        let all = ScanRange(cidr: "0.0.0.0/0")!
+        let start = Date()
+        XCTAssertNil(ScanRange.uniqueAddresses([all]))
+        XCTAssertLessThan(Date().timeIntervalSince(start), 0.5, "rejection must not expand the range")
+    }
+
+    func testRejectsRangeOverLimit() {
+        let big = ScanRange(cidr: "10.0.0.0/8")!  // ~16.7M addresses
+        let start = Date()
+        XCTAssertNil(ScanRange.uniqueAddresses([big]))
+        XCTAssertLessThan(Date().timeIntervalSince(start), 0.5, "rejection must not expand the range")
+    }
+
+    func testAcceptsRangeAtLimit() throws {
+        let atLimit = ScanRange(cidr: "10.0.0.0/16")!  // 65,534 usable hosts
+        let unique = try XCTUnwrap(ScanRange.uniqueAddresses([atLimit]))
+        XCTAssertEqual(unique.count, 65_534)
+    }
+
+    func testTotalHostCountDoesNotOverflow() {
+        let all = ScanRange(cidr: "0.0.0.0/0")!
+        XCTAssertEqual(ScanRange.totalHostCount([all]), 4_294_967_294)
+        // Summing many maximal ranges must saturate rather than trap.
+        XCTAssertEqual(ScanRange.totalHostCount(Array(repeating: all, count: 8)), 34_359_738_352)
+    }
+
+    func testLimitIsHonoredExactly() throws {
+        let r = ScanRange(range: "10.0.0.1-10.0.0.10")!
+        XCTAssertNotNil(ScanRange.uniqueAddresses([r], limit: 10))
+        XCTAssertNil(ScanRange.uniqueAddresses([r], limit: 9))
     }
 
     // MARK: - IPv4 helpers
