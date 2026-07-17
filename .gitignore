@@ -31,3 +31,6 @@ landing/
 
 # Stray downloads / scratch images at the repo root
 /iPScanner-*.png
+
+# Other
+.codegraph/
