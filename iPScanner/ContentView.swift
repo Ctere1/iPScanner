@@ -267,38 +267,52 @@ struct ContentView: View {
 
     // MARK: - Toolbar
 
-    /// The toolbar's controls need roughly 900pt laid out in one row, but the detail pane is far
-    /// narrower than that once the sidebar and inspector take their share. Every control used to
-    /// sit in a single HStack with fixed widths and `.fixedSize()`, which refuses to shrink — so
-    /// the row overflowed its bounds and the controls drew on top of each other.
+    /// How much of the toolbar is shown inline; the rest moves to the overflow menu.
     ///
-    /// `ViewThatFits` picks the widest layout that actually fits: the full row when there is room,
-    /// otherwise a compact row that keeps the scan controls visible and folds everything secondary
-    /// into an overflow menu.
+    /// Laid out flat the controls need roughly 900pt, but the detail pane only gets what is left
+    /// after the sidebar and inspector take theirs. Selecting a host opens the 320pt inspector and
+    /// leaves the table pane around 390pt — so there are three genuinely different widths to
+    /// serve, not two, and a two-step ladder still overflowed the moment a row was selected.
+    ///
+    /// Controls that cannot shrink (a segmented picker, `.fixedSize()` menus) must be *removed* at
+    /// narrow widths rather than squeezed: an HStack that cannot shrink does not clip, it overflows
+    /// and draws over its neighbours.
+    private enum ToolbarDensity {
+        case full     // everything inline
+        case compact  // secondary controls in the overflow menu
+        case tight    // inspector is open: range, scan, progress, search, overflow
+        case minimal  // inspector dragged wide: range, scan, overflow — nothing optional left
+    }
+
     @ViewBuilder
     private var toolbar: some View {
+        // ViewThatFits falls back to the *last* child when none fit, so `.minimal` must be the
+        // smallest layout that is still usable: dragging the inspector out to its 460pt maximum
+        // leaves the table pane around 254pt, narrower than even `.tight` needs.
         ViewThatFits(in: .horizontal) {
-            toolbarRow(compact: false)
-            toolbarRow(compact: true)
+            toolbarRow(.full)
+            toolbarRow(.compact)
+            toolbarRow(.tight)
+            toolbarRow(.minimal)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
     }
 
     @ViewBuilder
-    private func toolbarRow(compact: Bool) -> some View {
+    private func toolbarRow(_ density: ToolbarDensity) -> some View {
         HStack(spacing: 10) {
-            targetControls(compact: compact)
-            scanControls(compact: compact)
-            if !compact {
+            targetControls(density)
+            scanControls(density)
+            if density == .full {
                 actionControls
             }
             Spacer(minLength: 8)
-            if compact {
-                searchField
-                overflowMenu
-            } else {
+            if density == .full {
                 viewControls
+            } else {
+                searchField(density)
+                overflowMenu
             }
 
             // Hidden ⌘C handler — receives the keyboard shortcut without taking visual space.
@@ -402,18 +416,20 @@ struct ContentView: View {
         .accessibilityLabel("More controls")
     }
 
+    /// A text field cannot live in a menu, so search is the one control the minimal row drops
+    /// outright rather than folding away. ⌘F still focuses it once the row has space again.
     @ViewBuilder
-    private var searchField: some View {
-        if !controller.hosts.isEmpty {
+    private func searchField(_ density: ToolbarDensity) -> some View {
+        if !controller.hosts.isEmpty, density != .minimal {
             TextField("", text: $controller.searchQuery, prompt: Text("Search…"))
                 .textFieldStyle(.roundedBorder)
-                .frame(minWidth: 90, maxWidth: 200)
+                .frame(minWidth: density == .tight ? 70 : 90, maxWidth: 200)
                 .focused($searchFieldFocused)
         }
     }
 
     @ViewBuilder
-    private func targetControls(compact: Bool) -> some View {
+    private func targetControls(_ density: ToolbarDensity) -> some View {
         HStack(spacing: 10) {
             if let imported = controller.importedTargets {
                 importedChip(imported)
@@ -421,23 +437,25 @@ struct ContentView: View {
                 TextField("10.0.0.0/24, 192.168.1.0/24, 172.16.5.50-172.16.5.100", text: $controller.rangeInput)
                     .textFieldStyle(.roundedBorder)
                     // Allowed to shrink: it is the one control that can give width back to the row.
-                    .frame(minWidth: 130, maxWidth: 380)
+                    .frame(minWidth: density == .full || density == .compact ? 130 : 100, maxWidth: 380)
                     .onSubmit { if !controller.isScanning { controller.start() } }
 
-                Button {
-                    controller.toggleSaveCurrentRange()
-                } label: {
-                    Image(systemName: controller.isCurrentRangeSaved ? "star.fill" : "star")
-                        .foregroundStyle(controller.isCurrentRangeSaved ? .yellow : .secondary)
+                if density == .full || density == .compact {
+                    Button {
+                        controller.toggleSaveCurrentRange()
+                    } label: {
+                        Image(systemName: controller.isCurrentRangeSaved ? "star.fill" : "star")
+                            .foregroundStyle(controller.isCurrentRangeSaved ? .yellow : .secondary)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(controller.rangeInput.trimmingCharacters(in: .whitespaces).isEmpty)
+                    .help(controller.isCurrentRangeSaved ? "Remove from saved" : "Save range")
+                    .accessibilityLabel(controller.isCurrentRangeSaved ? "Remove from saved" : "Save range")
                 }
-                .buttonStyle(.plain)
-                .disabled(controller.rangeInput.trimmingCharacters(in: .whitespaces).isEmpty)
-                .help(controller.isCurrentRangeSaved ? "Remove from saved" : "Save range")
-                .accessibilityLabel(controller.isCurrentRangeSaved ? "Remove from saved" : "Save range")
             }
 
-            // These three are reachable from the overflow menu in the compact row.
-            if !compact {
+            // These three are reachable from the overflow menu at narrower widths.
+            if density == .full {
                 Button {
                     openTargetFile()
                 } label: {
@@ -462,15 +480,15 @@ struct ContentView: View {
             .buttonStyle(.plain)
             .help("Subnet calculator")
             .accessibilityLabel("Subnet calculator")
-            // Anchors the popover in both layouts; hidden rather than removed when compact so the
+            // Anchors the popover in every layout; hidden rather than removed when narrow so the
             // overflow menu's "Subnet Calculator…" item still has something to attach to.
-            .frame(width: compact ? 0 : nil)
-            .opacity(compact ? 0 : 1)
+            .frame(width: density == .full ? nil : 0)
+            .opacity(density == .full ? 1 : 0)
             .popover(isPresented: $showingSubnetCalc, arrowEdge: .bottom) {
                 subnetCalcPopover
             }
 
-            if !compact {
+            if density == .full {
                 Menu {
                 let interfaces = NetworkInterface.scannableInterfaces()
                 if interfaces.isEmpty {
@@ -499,7 +517,7 @@ struct ContentView: View {
     }
 
     @ViewBuilder
-    private func scanControls(compact: Bool) -> some View {
+    private func scanControls(_ density: ToolbarDensity) -> some View {
         HStack(spacing: 10) {
             if controller.isScanning {
                 Button("Stop", systemImage: "stop.fill") { controller.stop() }
@@ -515,9 +533,9 @@ struct ContentView: View {
                     .help("Start scan (⌘R)")
             }
 
-            // The segmented picker cannot shrink below its labels; in the compact row the same
-            // choice lives in the overflow menu instead.
-            if !compact {
+            // The segmented picker is pinned at 220pt and cannot shrink below its labels, so it is
+            // removed rather than squeezed; the same choice lives in the overflow menu.
+            if density == .full {
                 Picker("", selection: profileBinding) {
                     ForEach(ScanProfile.allCases) { p in
                         Text(p.label).tag(p)
@@ -530,12 +548,14 @@ struct ContentView: View {
                 .disabled(controller.isScanning)
             }
 
-            rescanMenu
+            if density == .full || density == .compact {
+                rescanMenu
+            }
 
             if case .scanning(let scanned, let total) = controller.state {
                 ProgressView(value: Double(scanned), total: Double(max(total, 1)))
                     .progressViewStyle(.linear)
-                    .frame(minWidth: 60, maxWidth: 160)
+                    .frame(minWidth: density == .full || density == .compact ? 60 : 40, maxWidth: 160)
             }
         }
     }
