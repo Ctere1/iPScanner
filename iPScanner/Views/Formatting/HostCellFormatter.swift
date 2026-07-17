@@ -1,4 +1,4 @@
-import Foundation
+import SwiftUI
 
 /// Formats host fields for the table's cells.
 ///
@@ -23,6 +23,32 @@ enum HostCellFormatter {
             parts.append(host.ttl.map { "ttl \($0)" } ?? "—")
         }
         return parts.joined(separator: " · ")
+    }
+
+    /// Explains where a host's port list came from, which is not obvious: an empty list can mean
+    /// nobody looked, and a short one can mean discovery happened to try five ports.
+    static func portsHelp(for host: Host) -> String {
+        if host.scannedPorts.isEmpty {
+            return "Not port-scanned. Select the host and run Port Scan."
+        }
+        if Set(host.scannedPorts) == Set(NetworkScanner.tcpFallbackPorts) {
+            let tried = PortScanner.formatList(NetworkScanner.tcpFallbackPorts.sorted())
+            return "Found during host discovery, which tried \(tried). Run Port Scan for a full list."
+        }
+        let n = host.scannedPorts.count
+        return "Scanned \(n) port\(n == 1 ? "" : "s")."
+    }
+
+    /// Renders text with `query` highlighted. Falls through to plain text when the query is empty
+    /// or does not match.
+    static func highlighted(_ source: String, query: String) -> AttributedString {
+        var attr = AttributedString(source)
+        guard !query.isEmpty,
+              let range = attr.range(of: query, options: [.caseInsensitive]) else {
+            return attr
+        }
+        attr[range].backgroundColor = .yellow.opacity(0.4)
+        return attr
     }
 
     /// Rough heuristic translating an ICMP TTL into a probable origin OS.

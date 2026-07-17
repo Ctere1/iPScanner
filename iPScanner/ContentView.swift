@@ -31,18 +31,6 @@ struct ContentView: View {
     /// Reading and writing .ipscan.json files. The panels and decoding used to live in this view.
     private var snapshots: SnapshotFileCoordinator { SnapshotFileCoordinator(controller: controller) }
 
-    private var rttTtlHeader: String {
-        HostCellFormatter.rttTtlHeader(showRTT: columns.isVisible(.rtt), showTTL: columns.isVisible(.ttl))
-    }
-
-    private func rttTtlCell(_ host: Host) -> String {
-        HostCellFormatter.rttTtlCell(host, showRTT: columns.isVisible(.rtt), showTTL: columns.isVisible(.ttl))
-    }
-
-    private func ttlHint(for ttl: Int?) -> String {
-        HostCellFormatter.ttlHint(for: ttl)
-    }
-
     enum ManualCheckOutcome: Identifiable {
         case upToDate
         case failed(String)
@@ -131,19 +119,6 @@ struct ContentView: View {
     /// if the user hasn't hidden it. Sticky, like Xcode's inspector.
     private var showInspector: Bool { inspectorVisible && inspectedHost != nil }
 
-    /// Renders text with the active search query highlighted.
-    /// Falls through to plain AttributedString when the query is empty or doesn't match.
-    private func highlighted(_ source: String) -> AttributedString {
-        var attr = AttributedString(source)
-        let query = controller.searchQuery
-        guard !query.isEmpty,
-              let range = attr.range(of: query, options: [.caseInsensitive]) else {
-            return attr
-        }
-        attr[range].backgroundColor = .yellow.opacity(0.4)
-        return attr
-    }
-
     // `body` is split into three expressions on purpose: as one chain — the layout plus ten
     // notification handlers plus every sheet, alert and dialog — it grew past what the Swift
     // type-checker will solve, and the build failed with "unable to type-check in reasonable time".
@@ -180,7 +155,7 @@ struct ContentView: View {
                         label: controller.label(for: host),
                         anchor: controller.anchor(for: host),
                         services: mdns.services(for: host.ip),
-                        resolvedName: resolvedName(for: host),
+                        resolvedName: mdns.resolvedName(for: host),
                         onClose: { inspectorVisible = false },
                         // Keyed by the anchor captured when editing began, not by whatever is
                         // selected when the commit lands — see HostInspector.
@@ -362,29 +337,9 @@ struct ContentView: View {
     /// never port-probed and reads "—", while one found via the TCP fallback shows the handful of
     /// ports discovery already tried. Without this the two look like the same column disagreeing
     /// with itself.
-    private func portsHelp(for host: Host) -> String {
-        if host.scannedPorts.isEmpty {
-            return "Not port-scanned. Select the host and run Port Scan."
-        }
-        if Set(host.scannedPorts) == Set(NetworkScanner.tcpFallbackPorts) {
-            let tried = PortScanner.formatList(NetworkScanner.tcpFallbackPorts.sorted())
-            return "Found during host discovery, which tried \(tried). Run Port Scan for a full list."
-        }
-        let n = host.scannedPorts.count
-        return "Scanned \(n) port\(n == 1 ? "" : "s")."
-    }
-
     /// Reverse DNS first, then the names the scan picked up elsewhere. Most LANs have no PTR
     /// records, so without the fallbacks this column reads "—" for every host even when the device
     /// is announcing its name over Bonjour.
-    private func resolvedName(for host: Host) -> ResolvedName? {
-        ResolvedName.best(
-            dns: host.hostname,
-            mdns: mdns.name(for: host.ip),
-            netbios: host.netbiosName
-        )
-    }
-
     // MARK: - Toolbar
 
     /// How much of the toolbar is shown inline; the rest moves to the overflow menu.
@@ -895,168 +850,17 @@ struct ContentView: View {
             filteredEmptyState
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
-            Table(rows, selection: $controller.selection, sortOrder: $controller.sortOrder) {
-                TableColumn("●") { host in
-                    Circle()
-                        .fill(host.status == .alive ? Color.green : Color.gray)
-                        .frame(width: 8, height: 8)
-                        .help(host.status == .alive ? "Alive" : (host.status == .dead ? "Dead" : "Scanning"))
-                        .accessibilityLabel(host.status == .alive ? "Alive" : (host.status == .dead ? "Dead" : "Scanning"))
-                }
-                .width(20)
-
-                TableColumn("IP", value: \.ipNumeric) { host in
-                    let kind = DeviceClassifier.classify(host)
-                    HStack(spacing: 6) {
-                        Image(systemName: kind.sfSymbol)
-                            .font(.caption)
-                            .foregroundStyle(kind == .unknown ? Color.secondary.opacity(0.4) : Color.secondary)
-                            .help(kind.label)
-                            .frame(width: 14, alignment: .center)
-                        Text(highlighted(host.ip)).monospaced()
-                    }
-                }
-                .width(min: 130, ideal: 145)
-
-                if controller.diff != nil {
-                    TableColumn("Δ") { host in
-                        if let change = controller.change(for: host) {
-                            Image(systemName: change.sfSymbol)
-                                .foregroundStyle(change.tint)
-                                .help(change.label)
-                                .accessibilityLabel(change.label)
-                        } else {
-                            Text("")
-                        }
-                    }
-                    .width(20)
-                }
-
-                // Not sortable: a label lives on the controller, keyed by anchor, not on `Host` —
-                // so there is no key path for `TableColumn(_:value:)` to sort by.
-                if columns.isVisible(.label) {
-                    TableColumn("Label") { host in
-                        if let label = controller.label(for: host) {
-                            Text(highlighted(label))
-                                .foregroundStyle(.tint)
-                                .lineLimit(1)
-                                .truncationMode(.tail)
-                                .help(label)
-                        } else {
-                            Text("—").foregroundStyle(.secondary)
-                        }
-                    }
-                    .width(min: 80, ideal: 130)
-                }
-
-                if columns.isVisible(.hostname) {
-                    TableColumn("Hostname", value: \.hostnameSort) { host in
-                        if let name = resolvedName(for: host) {
-                            HStack(spacing: 4) {
-                                Text(highlighted(name.value))
-                                    .lineLimit(1)
-                                    .truncationMode(.tail)
-                                    .help(name.value)
-                                if let badge = name.source.badge {
-                                    Text(badge)
-                                        .font(.system(size: 9, weight: .medium))
-                                        .padding(.horizontal, 4)
-                                        .padding(.vertical, 1)
-                                        .background(Color.secondary.opacity(0.15), in: Capsule())
-                                        .foregroundStyle(.secondary)
-                                        .help(name.source.explanation)
-                                }
-                            }
-                        } else {
-                            Text("—").foregroundStyle(.secondary)
-                        }
-                    }
-                    .width(min: 110, ideal: 190)
-                }
-
-                if columns.isVisible(.mac) {
-                    TableColumn("MAC", value: \.macSort) { host in
-                        if let m = host.mac {
-                            Text(highlighted(m.uppercased())).monospaced().lineLimit(1)
-                        } else {
-                            Text("—").monospaced().foregroundStyle(.secondary)
-                        }
-                    }
-                    .width(min: 120, ideal: 140)
-                }
-
-                if columns.isVisible(.vendor) {
-                    TableColumn("Vendor", value: \.vendorSort) { host in
-                        if let v = host.vendor {
-                            Text(highlighted(v))
-                                .lineLimit(1)
-                                .truncationMode(.tail)
-                                .help(v)
-                        } else {
-                            Text("—").foregroundStyle(.secondary)
-                        }
-                    }
-                    .width(min: 100, ideal: 150)
-                }
-
-                if columns.isVisible(.title) {
-                    TableColumn("Title", value: \.titleSort) { host in
-                        if let t = host.serviceTitle {
-                            Text(highlighted(t))
-                                .lineLimit(1)
-                                .truncationMode(.tail)
-                                .help(t)
-                        } else {
-                            Text("—").foregroundStyle(.secondary)
-                        }
-                    }
-                    .width(min: 80, ideal: 130)
-                }
-
-                // RTT and TTL share one column, and so it cannot be sortable: `TableColumn(_:value:)`
-                // takes a single key path, and this cell shows whichever of the two is enabled.
-                // Splitting them would fix that, but takes the table to 11 columns — one past
-                // `TableColumnBuilder`'s limit — and wrapping in `Group` to get under it defeats the
-                // type-checker on an expression this size. Left merged deliberately.
-                if columns.isVisible(.rtt) || columns.isVisible(.ttl) {
-                    TableColumn(rttTtlHeader) { host in
-                        Text(rttTtlCell(host))
-                            .monospaced()
-                            .lineLimit(1)
-                            .foregroundStyle(.secondary)
-                            .help(ttlHint(for: host.ttl))
-                    }
-                    .width(min: 60, ideal: 90, max: 140)
-                }
-
-                if columns.isVisible(.ports) {
-                    TableColumn("Ports", value: \.openPortCount) { host in
-                        let text = PortScanner.displayList(open: host.openPorts, scanned: host.scannedPorts)
-                        Text(text)
-                            .lineLimit(1)
-                            .truncationMode(.tail)
-                            .foregroundStyle(host.scannedPorts.isEmpty ? .secondary : .primary)
-                            .help(portsHelp(for: host))
-                    }
-                    .width(min: 80, ideal: 140)
-                }
-            }
-            .frame(maxHeight: .infinity)
-            .contextMenu(forSelectionType: Host.ID.self) { ids in
-                HostContextMenu(
-                    controller: controller,
-                    ids: ids,
-                    requestPortScan: { targets in
-                        portError = nil
-                        portScanRequest = PortScanRequest(targets: targets)
-                    },
-                    requestBulkDelete: { pendingBulkDelete = BulkDeleteRequest(ids: $0) }
-                )
-            } primaryAction: { ids in
-                if ids.count == 1, let id = ids.first, let h = host(forID: id) {
-                    HostActions.openBrowser(ip: h.ip)
-                }
-            }
+            HostTable(
+                controller: controller,
+                columns: columns,
+                mdns: mdns,
+                rows: rows,
+                requestPortScan: { targets in
+                    portError = nil
+                    portScanRequest = PortScanRequest(targets: targets)
+                },
+                requestBulkDelete: { pendingBulkDelete = BulkDeleteRequest(ids: $0) }
+            )
         }
     }
 
