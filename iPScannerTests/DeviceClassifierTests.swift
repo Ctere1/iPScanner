@@ -473,3 +473,24 @@ extension DeviceClassifierTests {
         XCTAssertEqual(type(signals(ports: [9100], vendor: "Hewlett Packard Enterprise")), .printer)
     }
 }
+
+// MARK: - Connected appliances
+
+extension DeviceClassifierTests {
+
+    /// BSH Hausgeräte is Bosch/Siemens' Home Connect appliances — found on a real network, sitting
+    /// unidentified behind a bare port 80.
+    func testConnectedApplianceIsIoT() {
+        XCTAssertEqual(type(signals(ports: [80], vendor: "BSH Hausgeräte GmbH")), .iot)
+    }
+
+    func testRobotVacuumIsIoT() {
+        XCTAssertEqual(type(signals(ports: [80], vendor: "Roborock")), .iot)
+    }
+
+    /// Named "bsh hausger" rather than "bosch": Bosch also makes industrial and automotive gear,
+    /// and this list only holds companies that make one kind of thing.
+    func testBoschIndustrialIsNotAssumedToBeAnAppliance() {
+        XCTAssertNotEqual(type(signals(ports: [80], vendor: "Bosch Rexroth AG")), .iot)
+    }
+}

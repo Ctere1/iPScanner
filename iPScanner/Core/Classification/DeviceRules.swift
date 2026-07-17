@@ -4,10 +4,23 @@ import Foundation
 enum DeviceRules {
     /// Vendors that make small connected things. Referenced by the server rule too, to keep a
     /// light bulb with a web UI from being called a server.
+    ///
+    /// Every entry here has to pass one test: does the company make *only* this kind of thing? A
+    /// name is evidence only if it is unambiguous. That test is why "samsung" is not in the TV list
+    /// (phones, SSDs, fridges), why "philips" is qualified to "philips lighting" (they also make
+    /// televisions), and why bare "hewlett" is gone from the printer list (HPE makes access
+    /// points). Each of those was a real misidentification before it was a rule.
     static let iotVendors = [
+        // Modules and smart-home platforms
         "espressif", "tuya", "sonoff", "itead", "shelly", "allterco", "xiaomi", "yeelight",
         "signify", "philips lighting", "nest labs", "amazon technologies", "wyze",
-        "ikea of sweden", "aqara", "lumi", "broadlink", "ecobee", "wemo", "belkin"
+        "ikea of sweden", "aqara", "lumi", "broadlink", "ecobee", "wemo", "belkin",
+        "nanoleaf", "govee", "meross", "sensibo", "netatmo", "tado",
+        // Connected white goods. BSH is Bosch/Siemens — the Home Connect ovens, dishwashers and
+        // fridges. Named rather than "bosch", which also makes industrial and automotive gear.
+        "bsh hausger", "miele", "electrolux", "candy hoover",
+        // Robot vacuums
+        "roborock", "ecovacs", "dreame", "irobot"
     ]
 
     static let all: [DeviceRule] = printers + apple + castAndTV + nas + routers + windowsLinux
