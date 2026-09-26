@@ -37,6 +37,7 @@ enum PortScanner {
     }
 
     static func probe(_ ip: String, ports: [Int], timeoutMs: Int = 800) async -> [Int] {
+        guard !Task.isCancelled else { return [] }
         var open: [Int] = []
         await withTaskGroup(of: (Int, Bool).self) { group in
             var iter = ports.makeIterator()
@@ -45,6 +46,7 @@ enum PortScanner {
                 group.addTask { (port, await probeOne(ip: ip, port: port, timeoutMs: timeoutMs)) }
             }
             while let (port, isOpen) = await group.next() {
+                if Task.isCancelled { group.cancelAll(); break }
                 if isOpen { open.append(port) }
                 if let next = iter.next() {
                     group.addTask { (next, await probeOne(ip: ip, port: next, timeoutMs: timeoutMs)) }
@@ -62,28 +64,31 @@ enum PortScanner {
         let connection = NWConnection(to: endpoint, using: .tcp)
         let queue = DispatchQueue.global(qos: .userInitiated)
 
-        return await withCheckedContinuation { (continuation: CheckedContinuation<Bool, Never>) in
-            let state = ProbeState(connection: connection, continuation: continuation)
+        return await withTaskCancellationHandler {
+            await withCheckedContinuation { (continuation: CheckedContinuation<Bool, Never>) in
+                let state = ProbeState(connection: connection, continuation: continuation)
 
-            connection.stateUpdateHandler = { newState in
-                switch newState {
-                case .ready:
-                    state.finish(true)
-                case .failed, .cancelled:
-                    state.finish(false)
-                case .setup, .preparing, .waiting:
-                    break
-                @unknown default:
-                    break
+                connection.stateUpdateHandler = { newState in
+                    switch newState {
+                    case .ready:
+                        state.finish(true)
+                    case .failed, .cancelled:
+                        state.finish(false)
+                    case .setup, .preparing, .waiting:
+                        break
+                    @unknown default:
+                        break
+                    }
                 }
-            }
 
-            queue.asyncAfter(deadline: .now() + .milliseconds(timeoutMs)) {
-                state.finish(false)
-            }
+                queue.asyncAfter(deadline: .now() + .milliseconds(timeoutMs)) {
+                    state.finish(false)
+                }
 
-            connection.start(queue: queue)
-        }
+                if Task.isCancelled { state.finish(false) }
+                else { connection.start(queue: queue) }
+            }
+        } onCancel: { connection.cancel() }
     }
 
     private final class ProbeState: @unchecked Sendable {

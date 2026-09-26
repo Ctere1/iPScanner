@@ -31,3 +31,14 @@ landing/
 
 # Stray downloads / scratch images at the repo root
 /iPScanner-*.png
+
+# Local credentials, Worker caches and generated distribution artifacts
+.wrangler/
+.env
+.env.*
+!.env.example
+*.p12
+*.p8
+*.keychain-db
+*.mobileprovision
+*.provisionprofile

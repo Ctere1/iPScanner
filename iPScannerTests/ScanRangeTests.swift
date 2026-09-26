@@ -128,6 +128,28 @@ final class ScanRangeTests: XCTestCase {
         XCTAssertEqual(unique, ["10.0.0.1", "10.0.0.2", "10.0.0.5", "10.0.0.6"])
     }
 
+    // MARK: - totalHostCount (must not expand addresses)
+
+    func testTotalHostCountSumsWithoutOverlap() {
+        let r1 = ScanRange(cidr: "10.0.0.0/24")!  // 254
+        let r2 = ScanRange(cidr: "10.0.1.0/24")!  // 254
+        XCTAssertEqual(ScanRange.totalHostCount([r1, r2]), 508)
+    }
+
+    /// A `/0` range covers ~4 billion addresses. This must return instantly and
+    /// without attempting to materialize any address — a caller uses this to
+    /// reject the input BEFORE calling `uniqueAddresses`, which would otherwise
+    /// try to build a multi-gigabyte Set.
+    func testTotalHostCountHandlesHugeRangeWithoutExpanding() {
+        let huge = ScanRange(cidr: "0.0.0.0/0")!
+        let count = ScanRange.totalHostCount([huge])
+        XCTAssertGreaterThan(count, 65_536)
+    }
+
+    func testTotalHostCountEmpty() {
+        XCTAssertEqual(ScanRange.totalHostCount([]), 0)
+    }
+
     // MARK: - IPv4 helpers
 
     func testIPv4UInt32Conversion() {

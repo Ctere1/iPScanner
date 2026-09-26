@@ -6,7 +6,9 @@ struct HostInspector: View {
     let label: String?
     let anchor: String?
     let services: [MDNSDiscovery.ServiceRecord]
-    let onLabelChange: (String?) -> Void
+    let onLabelChange: (Host, String?) -> Void
+    @State private var editingHost: Host?
+    @State private var originalLabel = ""
 
     @State private var labelText: String = ""
     @State private var labelSavedAt: Date?
@@ -25,14 +27,18 @@ struct HostInspector: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .onAppear {
-            labelText = label ?? ""
+            editingHost = host
+            originalLabel = label ?? ""
+            labelText = originalLabel
         }
         .onDisappear {
             commitLabelIfChanged()
         }
         .onChange(of: host?.id) { _, _ in
             commitLabelIfChanged()
-            labelText = label ?? ""
+            editingHost = host
+            originalLabel = label ?? ""
+            labelText = originalLabel
         }
     }
 
@@ -72,10 +78,11 @@ struct HostInspector: View {
     }
 
     private func commitLabelIfChanged() {
-        guard host != nil else { return }
+        guard let editingHost else { return }
         let trimmed = labelText.trimmingCharacters(in: .whitespacesAndNewlines)
-        if trimmed != (label ?? "") {
-            onLabelChange(trimmed.isEmpty ? nil : trimmed)
+        if trimmed != originalLabel {
+            onLabelChange(editingHost, trimmed.isEmpty ? nil : trimmed)
+            originalLabel = trimmed
             labelSavedAt = Date()
             Task { @MainActor in
                 try? await Task.sleep(for: .seconds(1.5))
@@ -105,7 +112,7 @@ struct HostInspector: View {
                     Text(v).font(.subheadline).foregroundStyle(.secondary).lineLimit(2)
                 }
                 if kind != .unknown {
-                    Text(kind.label).font(.caption).foregroundStyle(.tertiary)
+                    Text("Estimated: \(kind.label)").font(.caption).foregroundStyle(.tertiary)
                 }
             }
             Spacer(minLength: 0)
@@ -135,6 +142,8 @@ struct HostInspector: View {
     @ViewBuilder
     private func infoSection(host: Host) -> some View {
         VStack(alignment: .leading, spacing: 6) {
+            infoRow("Vendor status", host.vendorStatus?.label ?? "Not checked")
+            Text(DeviceClassifier.assessment(host).evidence).font(.caption).foregroundStyle(.secondary)
             infoRow("Hostname", host.hostname)
             if let nb = host.netbiosName {
                 infoRow("NetBIOS", nb)
@@ -237,11 +246,17 @@ struct HostInspector: View {
                 Button { HostActions.openSMB(ip: host.ip) } label: {
                     Label("SMB", systemImage: "externaldrive.connected.to.line.below")
                 }
+
+            }
+
+            DisclosureGroup("Advanced") {
+                HStack {
                 Button { HostActions.openAFP(ip: host.ip) } label: {
                     Label("AFP", systemImage: "externaldrive")
                 }
                 Button { HostActions.openTelnet(ip: host.ip) } label: {
                     Label("Telnet", systemImage: "terminal.fill")
+                }
                 }
             }
 

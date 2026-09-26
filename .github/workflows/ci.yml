@@ -1,0 +1,56 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: macos-15
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install tools
+        run: brew install xcodegen
+
+      - name: Test bundle collision guard
+        run: bash scripts/tests/bundle-layout.sh
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      - name: Run unit tests
+        run: |
+          xcodebuild test \
+            -scheme iPScanner \
+            -configuration Debug \
+            -destination 'platform=macOS' \
+            CODE_SIGN_IDENTITY="-" \
+            CODE_SIGN_STYLE=Manual \
+            DEVELOPMENT_TEAM=""
+
+      - name: Build CLI
+        run: |
+          xcodebuild \
+            -scheme ipscanner \
+            -configuration Debug \
+            -destination 'generic/platform=macOS' \
+            CODE_SIGN_IDENTITY="-" \
+            CODE_SIGN_STYLE=Manual \
+            DEVELOPMENT_TEAM="" \
+            build
+
+      - name: Check packaged entry points
+        run: |
+          set -euo pipefail
+          xcodebuild -scheme iPScanner -configuration Debug -destination 'generic/platform=macOS' SYMROOT="$PWD/build/bundle-test" CODE_SIGN_IDENTITY=- CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM= build
+          xcodebuild -scheme ipscanner -configuration Debug -destination 'generic/platform=macOS' SYMROOT="$PWD/build/bundle-test" CODE_SIGN_IDENTITY=- CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM= build
+          APP="$PWD/build/bundle-test/Debug/iPScanner.app"
+          mkdir -p "$APP/Contents/Helpers"
+          cp "$PWD/build/bundle-test/Debug/ipscanner-cli" "$APP/Contents/Helpers/ipscanner"
+          ./scripts/check-bundle-layout.sh "$APP"

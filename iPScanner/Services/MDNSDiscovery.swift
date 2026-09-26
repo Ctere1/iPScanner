@@ -35,103 +35,104 @@ final class MDNSDiscovery {
 
     private(set) var servicesByIP: [String: Set<ServiceRecord>] = [:]
     private var browsers: [NWBrowser] = []
-    private var pendingConnections: [NWConnection] = []
-    private let resolveQueue = DispatchQueue(
-        label: "iPScanner.mdns.resolve",
-        attributes: .concurrent
-    )
-
+    private var connections: [String: NWConnection] = [:]
+    private var inventory = BonjourInventory()
+    private var monitor: NWPathMonitor?
+    private var networkFingerprint: String?
+    private var generation = UUID()
+    private let resolveQueue = DispatchQueue(label: "iPScanner.mdns", attributes: .concurrent)
     var isRunning: Bool { !browsers.isEmpty }
 
     func start() {
-        guard browsers.isEmpty else { return }
+        guard !isRunning else { return }
+        let run = UUID(); generation = run
         for (type, label) in Self.serviceTypes {
-            let descriptor = NWBrowser.Descriptor.bonjour(type: type, domain: "local.")
-            let browser = NWBrowser(for: descriptor, using: .tcp)
+            let browser = NWBrowser(for: .bonjour(type: type, domain: "local."), using: .tcp)
             browser.browseResultsChangedHandler = { [weak self] results, _ in
                 Task { @MainActor in
-                    self?.handle(results: results, displayType: label)
+                    guard let self, self.generation == run else { return }
+                    self.handle(results: results, type: type, displayType: label, run: run)
                 }
             }
             browser.start(queue: .main)
             browsers.append(browser)
         }
+        let monitor = NWPathMonitor(); self.monitor = monitor
+        monitor.pathUpdateHandler = { [weak self] path in
+            Task { @MainActor in
+                guard let self, self.generation == run else { return }
+                let addresses = NetworkInterface.scannableInterfaces().map { "\($0.name):\($0.ipv4)/\($0.netmaskBits)" }.sorted().joined(separator: ",")
+                let fingerprint = "\(path.status):\(addresses)"
+                if let previous = self.networkFingerprint, previous != fingerprint {
+                    self.stop(); self.start()
+                } else { self.networkFingerprint = fingerprint }
+            }
+        }
+        monitor.start(queue: resolveQueue)
     }
 
     func stop() {
-        for b in browsers { b.cancel() }
+        generation = UUID()
+        for browser in browsers { browser.cancel() }
         browsers.removeAll()
-        for c in pendingConnections { c.cancel() }
-        pendingConnections.removeAll()
+        for connection in connections.values { connection.cancel() }
+        connections.removeAll()
+        inventory = BonjourInventory()
+        servicesByIP = [:]
+        monitor?.cancel(); monitor = nil; networkFingerprint = nil
     }
 
     func services(for ip: String) -> [ServiceRecord] {
-        Array(servicesByIP[ip] ?? []).sorted {
-            if $0.displayType == $1.displayType { return $0.name < $1.name }
-            return $0.displayType < $1.displayType
-        }
+        Array(servicesByIP[ip] ?? []).sorted { ($0.displayType, $0.name) < ($1.displayType, $1.name) }
     }
+    func uniqueServiceTypes(for ip: String) -> [String] { Array(Set(services(for: ip).map(\.displayType))).sorted() }
 
-    func uniqueServiceTypes(for ip: String) -> [String] {
-        var seen = Set<String>()
-        var ordered: [String] = []
-        for s in services(for: ip) where !seen.contains(s.displayType) {
-            seen.insert(s.displayType)
-            ordered.append(s.displayType)
-        }
-        return ordered
-    }
-
-    // MARK: - Internals
-
-    private func handle(results: Set<NWBrowser.Result>, displayType: String) {
+    private func handle(results: Set<NWBrowser.Result>, type: String, displayType: String, run: UUID) {
+        var endpoints: [String: (NWEndpoint, String)] = [:]
         for result in results {
-            guard case .service(let name, let type, let domain, _) = result.endpoint else { continue }
-            resolveService(name: name, type: type, domain: domain, displayType: displayType)
+            guard case .service(let name, _, let domain, let interface) = result.endpoint else { continue }
+            let id = "\(type)|\(domain)|\(name)|\(interface?.index ?? 0)"
+            endpoints[id] = (result.endpoint, name)
         }
-    }
-
-    private func resolveService(name: String, type: String, domain: String, displayType: String) {
-        let endpoint = NWEndpoint.service(name: name, type: type, domain: domain, interface: nil)
-        let connection = NWConnection(to: endpoint, using: .tcp)
-        pendingConnections.append(connection)
-
-        connection.stateUpdateHandler = { [weak self] state in
-            switch state {
-            case .ready:
-                if let path = connection.currentPath,
-                   case .hostPort(let host, _) = path.remoteEndpoint,
-                   let ip = Self.ipv4String(from: host) {
+        let removed = inventory.reconcile(ids: Set(endpoints.keys), type: type)
+        for id in removed { connections.removeValue(forKey: id)?.cancel() }
+        rebuild()
+        for (id, value) in endpoints where connections[id] == nil && inventory.records[id] == nil {
+            guard let token = inventory.tokens[id] else { continue }
+            let connection = NWConnection(to: value.0, using: .tcp)
+            connections[id] = connection
+            connection.stateUpdateHandler = { [weak self, weak connection] state in
+                guard let connection else { return }
+                switch state {
+                case .ready:
+                    let host: NWEndpoint.Host?
+                    if let path = connection.currentPath, case .hostPort(let remote, _) = path.remoteEndpoint { host = remote } else { host = nil }
+                    let ip = host.flatMap(Self.ipv4String)
                     Task { @MainActor in
-                        self?.add(
-                            record: ServiceRecord(
-                                displayType: displayType,
-                                serviceType: type,
-                                name: name,
-                                ip: ip
-                            )
-                        )
-                        self?.dropConnection(connection)
+                        guard let self, self.generation == run else { return }
+                        if let ip { self.inventory.accept(.init(displayType: displayType, serviceType: type, name: value.1, ip: ip), id: id, token: token) }
+                        self.rebuild()
+                        if self.connections[id] === connection { self.connections.removeValue(forKey: id) }
+                        connection.cancel()
                     }
+                case .failed, .cancelled:
+                    Task { @MainActor in
+                        guard let self, self.generation == run else { return }
+                        if self.connections[id] === connection { self.connections.removeValue(forKey: id) }
+                    }
+                default: break
                 }
-                connection.cancel()
-            case .failed, .cancelled:
-                Task { @MainActor in
-                    self?.dropConnection(connection)
-                }
-            default:
-                break
+            }
+            connection.start(queue: resolveQueue)
+            Task { @MainActor [weak self, weak connection] in
+                try? await Task.sleep(for: .seconds(3))
+                guard let self, let connection, self.generation == run, self.connections[id] === connection else { return }
+                self.connections.removeValue(forKey: id); connection.cancel()
             }
         }
-        connection.start(queue: resolveQueue)
     }
-
-    private func add(record: ServiceRecord) {
-        servicesByIP[record.ip, default: []].insert(record)
-    }
-
-    private func dropConnection(_ connection: NWConnection) {
-        pendingConnections.removeAll { $0 === connection }
+    private func rebuild() {
+        servicesByIP = Dictionary(grouping: inventory.records.values, by: \.ip).mapValues(Set.init)
     }
 
     nonisolated private static func ipv4String(from host: NWEndpoint.Host) -> String? {
@@ -143,5 +144,23 @@ final class MDNSDiscovery {
         default:
             return nil
         }
+    }
+}
+
+
+// Reconciles complete browser snapshots and rejects a late resolution after removal.
+struct BonjourInventory {
+    private(set) var tokens: [String: UUID] = [:]
+    private(set) var records: [String: MDNSDiscovery.ServiceRecord] = [:]
+    mutating func reconcile(ids: Set<String>, type: String) -> Set<String> {
+        let previous = Set(tokens.keys.filter { $0.hasPrefix(type + "|") })
+        let removed = previous.subtracting(ids)
+        for id in removed { tokens.removeValue(forKey: id); records.removeValue(forKey: id) }
+        for id in ids where tokens[id] == nil { tokens[id] = UUID() }
+        return removed
+    }
+    mutating func accept(_ record: MDNSDiscovery.ServiceRecord, id: String, token: UUID) {
+        guard tokens[id] == token else { return }
+        records[id] = record
     }
 }

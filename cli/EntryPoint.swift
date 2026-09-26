@@ -48,6 +48,8 @@ struct IPScannerCLI {
 
         for await event in scanner.scan(addresses: targets) {
             switch event {
+            case .phase:
+                break
             case .progress(let scanned, let total):
                 if verbose, scanned - lastReportedProgress >= max(10, total / 20) || scanned == total {
                     stderr.write(Data("[\(scanned)/\(total)]\n".utf8))
@@ -56,7 +58,7 @@ struct IPScannerCLI {
             case .host(let host):
                 if host.status == .alive {
                     if let existing = aliveByIP[host.ip] {
-                        aliveByIP[host.ip] = mergeHost(existing, with: host)
+                        aliveByIP[host.ip] = existing.merged(with: host)
                     } else {
                         aliveByIP[host.ip] = host
                     }
@@ -74,14 +76,22 @@ struct IPScannerCLI {
             stderr.write(Data("ipscanner: \(aliveByIP.count) alive host\(aliveByIP.count == 1 ? "" : "s") found\n".utf8))
         }
 
-        // Optional port scan + banner fetch
-        if let ports = args.ports, !ports.isEmpty, !aliveByIP.isEmpty {
+        // Optional port scan + banner fetch. `--ports` always wins; with no
+        // explicit `--ports`, the Deep profile auto-scans the common-ports set
+        // with banner fetch — matching the GUI's ScanController.start(), which
+        // chains the same auto port scan for Deep so both surfaces produce the
+        // same enrichment for the same profile.
+        let explicitPorts = args.ports?.isEmpty == false
+        let effectivePorts = explicitPorts ? args.ports : (args.profile.autoPortScan ? PortScanner.parsePorts(PortScanner.defaultPortsInput) : nil)
+        let effectiveFetchBanners = args.fetchBanners || (!explicitPorts && args.profile.autoPortScan)
+
+        if let ports = effectivePorts, !ports.isEmpty, !aliveByIP.isEmpty {
             if verbose {
                 stderr.write(Data("ipscanner: port-scanning \(aliveByIP.count) host\(aliveByIP.count == 1 ? "" : "s") for \(ports.count) port\(ports.count == 1 ? "" : "s")\n".utf8))
             }
-            await runPortScan(hosts: &aliveByIP, ports: ports, fetchBanners: args.fetchBanners)
-        } else if args.fetchBanners, verbose {
-            stderr.write(Data("warning: --fetch-banners requires --ports; skipping banner fetch\n".utf8))
+            await runPortScan(hosts: &aliveByIP, ports: ports, fetchBanners: effectiveFetchBanners)
+        } else if args.fetchBanners, explicitPorts == false, verbose {
+            stderr.write(Data("warning: --fetch-banners requires --ports (or --profile deep); skipping banner fetch\n".utf8))
         }
 
         // Sort + format + emit
@@ -140,6 +150,10 @@ struct IPScannerCLI {
         if let badIdx = parsed.firstInvalidIndex {
             throw CLIError.invalidRange("Invalid range chunk #\(badIdx) in \"\(range)\"")
         }
+        let totalHosts = ScanRange.totalHostCount(parsed.ranges)
+        if totalHosts > 65_536 {
+            throw CLIError.rangeTooLarge(totalHosts)
+        }
         return ScanRange.uniqueAddresses(parsed.ranges)
     }
 
@@ -148,19 +162,6 @@ struct IPScannerCLI {
             return "Imported list: \(URL(fileURLWithPath: path).lastPathComponent)"
         }
         return args.range ?? ""
-    }
-
-    private static func mergeHost(_ existing: Host, with update: Host) -> Host {
-        var merged = existing
-        if let v = update.hostname { merged.hostname = v }
-        if let v = update.mac { merged.mac = v }
-        if let v = update.vendor { merged.vendor = v }
-        if let v = update.rttMs { merged.rttMs = v }
-        if let v = update.ttl { merged.ttl = v }
-        if !update.openPorts.isEmpty { merged.openPorts = update.openPorts }
-        if let v = update.serviceTitle { merged.serviceTitle = v }
-        merged.status = update.status
-        return merged
     }
 
     private static func runPortScan(hosts: inout [String: Host], ports: [Int], fetchBanners: Bool) async {
@@ -231,10 +232,13 @@ struct IPScannerCLI {
 
 enum CLIError: Error, LocalizedError {
     case invalidRange(String)
+    case rangeTooLarge(Int)
 
     var errorDescription: String? {
         switch self {
         case .invalidRange(let msg): return msg
+        case .rangeTooLarge(let count):
+            return "Total target list too large (\(count) hosts). Narrow the range or split the file."
         }
     }
 }

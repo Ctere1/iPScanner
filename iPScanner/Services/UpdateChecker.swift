@@ -19,6 +19,10 @@ final class UpdateChecker {
     private(set) var lastError: String?
     private(set) var isChecking: Bool = false
 
+    private let session: URLSession
+
+    init(session: URLSession = .shared) { self.session = session }
+
     static let releasesAPI = URL(string: "https://api.github.com/repos/canberkys/iPScanner/releases/latest")!
     static let autoCheckInterval: TimeInterval = 24 * 60 * 60  // 24 hours
 
@@ -133,7 +137,7 @@ final class UpdateChecker {
         request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
         request.setValue("iPScanner-update-check", forHTTPHeaderField: "User-Agent")
 
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
             throw UpdateError.invalidResponse
         }

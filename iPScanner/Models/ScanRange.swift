@@ -41,6 +41,17 @@ struct ScanRange: Hashable {
         return (ranges, nil)
     }
 
+    /// Total host count across ranges, computed WITHOUT expanding any address list.
+    /// Callers must check this against their target-count limit before calling
+    /// `uniqueAddresses`, which does expand every address into memory.
+    static func totalHostCount(_ ranges: [ScanRange]) -> Int {
+        ranges.reduce(0) { partial, r in
+            let count = r.upperBound >= r.lowerBound ? r.hostCount : 0
+            let (sum, overflow) = partial.addingReportingOverflow(count)
+            return overflow ? Int.max : sum
+        }
+    }
+
     /// Combined unique addresses from multiple ranges, sorted numerically.
     static func uniqueAddresses(_ ranges: [ScanRange]) -> [String] {
         var seen = Set<UInt32>()

@@ -3,23 +3,28 @@ import UniformTypeIdentifiers
 import AppKit
 
 struct ContentView: View {
-    @State private var controller = ScanController()
-    @State private var mdns = MDNSDiscovery()
-    @State private var showingPortScan = false
-    @State private var portsInput = PortScanner.defaultPortsInput
-    @State private var portError: String?
-    @State private var fetchBanners = true
-    @State private var renamingRange: SavedRange?
-    @State private var showingWarnings = false
-    @State private var showingDiff = false
-    @State private var importAlert: ImportAlert?
-    @State private var showingSubnetCalc = false
-    @State private var subnetCalcInput = ""
-    @State private var updateChecker = UpdateChecker()
-    @State private var manualCheckOutcome: ManualCheckOutcome?
-    @AppStorage("iPScanner.update.lastCheckAt") private var updateLastCheckEpoch: Double = 0
-    @AppStorage("iPScanner.update.skippedVersion") private var updateSkippedVersion: String = ""
-    @FocusState private var searchFieldFocused: Bool
+    @AppStorage("iPScanner.sidebarVisible") var sidebarVisible = false
+    @Environment(\.openWindow) var openWindow
+    @State var columnVisibility: NavigationSplitViewVisibility = .detailOnly
+    @State var inspectorPresented = false
+    @State var detailWidth: CGFloat = 800
+    @State var controller = ScanController()
+    @State var mdns = MDNSDiscovery()
+    @State var showingPortScan = false
+    @State var portsInput = PortScanner.defaultPortsInput
+    @State var portError: String?
+    @State var fetchBanners = true
+    @State var renamingRange: SavedRange?
+    @State var showingWarnings = false
+    @State var showingDiff = false
+    @State var importAlert: ImportAlert?
+    @State var showingSubnetCalc = false
+    @State var subnetCalcInput = ""
+    @State var updateChecker = UpdateChecker()
+    @State var manualCheckOutcome: ManualCheckOutcome?
+    @AppStorage("iPScanner.update.lastCheckAt") var updateLastCheckEpoch: Double = 0
+    @AppStorage("iPScanner.update.skippedVersion") var updateSkippedVersion: String = ""
+    @FocusState var searchFieldFocused: Bool
 
     enum ManualCheckOutcome: Identifiable {
         case upToDate
@@ -32,27 +37,27 @@ struct ContentView: View {
         }
     }
 
-    private struct ImportAlert: Identifiable {
+    struct ImportAlert: Identifiable {
         let id = UUID()
         let title: String
         let message: String
     }
 
     // Column visibility (persisted) — Status, Device icon, IP always visible.
-    @AppStorage("iPScanner.col.label") private var showColLabel = true
-    @AppStorage("iPScanner.col.hostname") private var showColHostname = true
-    @AppStorage("iPScanner.col.mac") private var showColMAC = false
-    @AppStorage("iPScanner.col.vendor") private var showColVendor = true
-    @AppStorage("iPScanner.col.title") private var showColTitle = false
-    @AppStorage("iPScanner.col.rtt") private var showColRTT = false
-    @AppStorage("iPScanner.col.ttl") private var showColTTL = false
-    @AppStorage("iPScanner.col.ports") private var showColPorts = true
+    @AppStorage("iPScanner.col.label") var showColLabel = true
+    @AppStorage("iPScanner.col.hostname") var showColHostname = true
+    @AppStorage("iPScanner.col.mac") var showColMAC = false
+    @AppStorage("iPScanner.col.vendor") var showColVendor = true
+    @AppStorage("iPScanner.col.title") var showColTitle = false
+    @AppStorage("iPScanner.col.rtt") var showColRTT = false
+    @AppStorage("iPScanner.col.ttl") var showColTTL = false
+    @AppStorage("iPScanner.col.ports") var showColPorts = true
 
-    @AppStorage("iPScanner.inspectorWidth") private var inspectorWidth: Double = 320
-    @AppStorage("iPScanner.scanProfile") private var profileRaw: String = ScanProfile.standard.rawValue
-    @AppStorage("iPScanner.rescanInterval") private var rescanIntervalRaw: String = RescanInterval.off.rawValue
+    @AppStorage("iPScanner.inspectorWidth") var inspectorWidth: Double = 320
+    @AppStorage("iPScanner.scanProfile") var profileRaw: String = ScanProfile.standard.rawValue
+    @AppStorage("iPScanner.rescanInterval") var rescanIntervalRaw: String = RescanInterval.off.rawValue
 
-    private var profileBinding: Binding<ScanProfile> {
+    var profileBinding: Binding<ScanProfile> {
         Binding(
             get: { ScanProfile(rawValue: profileRaw) ?? .standard },
             set: { newValue in
@@ -62,7 +67,7 @@ struct ContentView: View {
         )
     }
 
-    private var rescanBinding: Binding<RescanInterval> {
+    var rescanBinding: Binding<RescanInterval> {
         Binding(
             get: { RescanInterval(rawValue: rescanIntervalRaw) ?? .off },
             set: { newValue in
@@ -72,15 +77,39 @@ struct ContentView: View {
         )
     }
 
-    private var inspectedHost: Host? {
+    var inspectedHost: Host? {
         guard controller.selection.count == 1,
               let id = controller.selection.first else { return nil }
         return controller.hosts.first { $0.id == id }
     }
 
-    private var showInspector: Bool { inspectedHost != nil }
+    var showInspector: Bool { inspectorPresented && inspectedHost != nil }
+    var inspectorSheet: Binding<Bool> {
+        Binding(get: { showInspector && detailWidth < 1050 },
+                set: { if !$0 { inspectorPresented = false } })
+    }
+    @ViewBuilder
+    var deviceInspector: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Text("Device details").font(.headline)
+                Spacer()
+                Button { inspectorPresented = false } label: { Image(systemName: "xmark") }
+                    .accessibilityLabel("Close device details")
+            }.padding(12)
+            HostInspector(
+                host: inspectedHost,
+                label: inspectedHost.flatMap { controller.label(for: $0) },
+                anchor: inspectedHost.map { controller.anchor(for: $0) },
+                services: inspectedHost.map { mdns.services(for: $0.ip) } ?? [],
+                onLabelChange: { host, value in
+                    controller.setLabel(value, for: host)
+                }
+            )
+        }
+    }
 
-    private func diffTint(_ change: HostChange) -> Color {
+    func diffTint(_ change: HostChange) -> Color {
         switch change {
         case .new: .green
         case .modified: .yellow
@@ -90,7 +119,7 @@ struct ContentView: View {
 
     /// Renders text with the active search query highlighted.
     /// Falls through to plain AttributedString when the query is empty or doesn't match.
-    private func highlighted(_ source: String) -> AttributedString {
+    func highlighted(_ source: String) -> AttributedString {
         var attr = AttributedString(source)
         let query = controller.searchQuery
         guard !query.isEmpty,
@@ -102,13 +131,14 @@ struct ContentView: View {
     }
 
     var body: some View {
-        NavigationSplitView {
+        NavigationSplitView(columnVisibility: $columnVisibility) {
             sidebar
                 .navigationSplitViewColumnWidth(min: 180, ideal: 220, max: 320)
         } detail: {
             HStack(spacing: 0) {
                 VStack(spacing: 0) {
                     toolbar
+                    if !controller.hosts.isEmpty { resultsToolbar }
                     Divider()
                     content
                     Divider()
@@ -116,33 +146,39 @@ struct ContentView: View {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-                if showInspector {
-                    ResizableDivider(width: $inspectorWidth, minWidth: 260, maxWidth: 460)
-                    HostInspector(
-                        host: inspectedHost,
-                        label: inspectedHost.flatMap { controller.label(for: $0) },
-                        anchor: inspectedHost.map { controller.anchor(for: $0) },
-                        services: inspectedHost.map { mdns.services(for: $0.ip) } ?? [],
-                        onLabelChange: { newValue in
-                            if let h = inspectedHost {
-                                controller.setLabel(newValue, for: h)
-                            }
-                        }
-                    )
-                    .frame(width: inspectorWidth)
+                if showInspector && detailWidth >= 1050 {
+                    ResizableDivider(width: $inspectorWidth, minWidth: 260, maxWidth: 360)
+                    deviceInspector.frame(width: min(inspectorWidth, 360))
                 }
             }
-            .navigationSplitViewColumnWidth(min: 720, ideal: 1100)
+            .background(GeometryReader { geometry in
+                Color.clear.onAppear { detailWidth = geometry.size.width }
+                    .onChange(of: geometry.size.width) { _, width in detailWidth = width }
+            })
+            .navigationSplitViewColumnWidth(min: 560, ideal: 1000)
         }
-        .frame(minWidth: 960, minHeight: 540)
+        .frame(minWidth: 800, minHeight: 540)
+        .onChange(of: profileRaw) {
+            if !controller.isScanning { controller.profile = ScanProfile(rawValue: profileRaw) ?? .standard }
+        }
+        .onChange(of: controller.isScanning) { _, active in
+            if !active { controller.profile = ScanProfile(rawValue: profileRaw) ?? .standard }
+        }
+        .sheet(isPresented: inspectorSheet) { deviceInspector.frame(width: 380, height: 500) }
+        .onChange(of: columnVisibility) { _, value in sidebarVisible = value != .detailOnly }
+        .onChange(of: controller.selection) { _, selection in
+            if selection.count != 1 { inspectorPresented = false }
+        }
+        .onDisappear { controller.stop(); mdns.stop() }
         .onAppear {
+            columnVisibility = sidebarVisible ? .all : .detailOnly
             controller.profile = ScanProfile(rawValue: profileRaw) ?? .standard
             controller.rescanInterval = RescanInterval(rawValue: rescanIntervalRaw) ?? .off
             controller.detectDefaultSubnetIfNeeded()
             mdns.start()
         }
         .onReceive(NotificationCenter.default.publisher(for: .iPScannerCommandRescan)) { _ in
-            if !controller.isScanning { controller.start() }
+            if controller.canStart { controller.start() }
         }
         .onReceive(NotificationCenter.default.publisher(for: .iPScannerCommandExportCSV)) { _ in
             if !controller.hosts.isEmpty { saveCSV() }
@@ -184,7 +220,7 @@ struct ContentView: View {
     // MARK: - Sidebar
 
     @ViewBuilder
-    private var sidebar: some View {
+    var sidebar: some View {
         List {
             Section("Saved Ranges") {
                 if controller.savedRanges.isEmpty {
@@ -203,7 +239,7 @@ struct ContentView: View {
     }
 
     @ViewBuilder
-    private func savedRangeRow(_ saved: SavedRange) -> some View {
+    func savedRangeRow(_ saved: SavedRange) -> some View {
         HStack(spacing: 6) {
             Image(systemName: "network")
                 .foregroundStyle(.tint)
@@ -251,272 +287,16 @@ struct ContentView: View {
         }
     }
 
-    private func host(forID id: Host.ID) -> Host? {
+    func host(forID id: Host.ID) -> Host? {
         controller.hosts.first { $0.id == id }
     }
 
     // MARK: - Toolbar
 
-    @ViewBuilder
-    private var toolbar: some View {
-        HStack(spacing: 10) {
-            if let imported = controller.importedTargets {
-                importedChip(imported)
-            } else {
-                TextField("10.0.0.0/24, 192.168.1.0/24, 172.16.5.50-172.16.5.100", text: $controller.rangeInput)
-                    .textFieldStyle(.roundedBorder)
-                    .frame(maxWidth: 380)
-                    .onSubmit { if !controller.isScanning { controller.start() } }
-
-                Button {
-                    controller.toggleSaveCurrentRange()
-                } label: {
-                    Image(systemName: controller.isCurrentRangeSaved ? "star.fill" : "star")
-                        .foregroundStyle(controller.isCurrentRangeSaved ? .yellow : .secondary)
-                }
-                .buttonStyle(.plain)
-                .disabled(controller.rangeInput.trimmingCharacters(in: .whitespaces).isEmpty)
-                .help(controller.isCurrentRangeSaved ? "Remove from saved" : "Save range")
-                .accessibilityLabel(controller.isCurrentRangeSaved ? "Remove from saved" : "Save range")
-            }
-
-            Button {
-                openTargetFile()
-            } label: {
-                Image(systemName: "doc.badge.arrow.up")
-                    .foregroundStyle(.secondary)
-            }
-            .buttonStyle(.plain)
-            .help("Import targets from .txt or .csv")
-            .accessibilityLabel("Import targets")
-            .disabled(controller.isScanning)
-
-            Button {
-                if subnetCalcInput.isEmpty {
-                    subnetCalcInput = controller.rangeInput
-                }
-                showingSubnetCalc.toggle()
-            } label: {
-                Image(systemName: "function")
-                    .foregroundStyle(.secondary)
-            }
-            .buttonStyle(.plain)
-            .help("Subnet calculator")
-            .accessibilityLabel("Subnet calculator")
-            .popover(isPresented: $showingSubnetCalc, arrowEdge: .bottom) {
-                subnetCalcPopover
-            }
-
-            Menu {
-                let interfaces = NetworkInterface.scannableInterfaces()
-                if interfaces.isEmpty {
-                    Text("No active interfaces").foregroundStyle(.secondary)
-                } else {
-                    ForEach(interfaces, id: \.name) { iface in
-                        Button {
-                            if let subnet = NetworkInterface.subnet(from: iface) {
-                                controller.rangeInput = subnet
-                            }
-                        } label: {
-                            Text("\(iface.name) — \(iface.ipv4)/\(iface.netmaskBits)")
-                        }
-                    }
-                }
-            } label: {
-                Image(systemName: "network")
-                    .foregroundStyle(.secondary)
-            }
-            .menuStyle(.borderlessButton)
-            .fixedSize()
-            .help("Pick interface subnet")
-            .accessibilityLabel("Pick interface subnet")
-
-            if controller.isScanning {
-                Button("Stop", systemImage: "stop.fill") { controller.stop() }
-                    .buttonStyle(.borderedProminent)
-                    .tint(.red)
-                    .keyboardShortcut(".", modifiers: [.command])
-                    .help("Stop scan (⌘.)")
-            } else {
-                Button("Scan", systemImage: "play.fill") { controller.start() }
-                    .buttonStyle(.borderedProminent)
-                    .keyboardShortcut(.return, modifiers: [])
-                    .disabled(controller.rangeInput.trimmingCharacters(in: .whitespaces).isEmpty)
-                    .help("Start scan (⌘R)")
-            }
-
-            Picker("", selection: profileBinding) {
-                ForEach(ScanProfile.allCases) { p in
-                    Text(p.label).tag(p)
-                }
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .frame(width: 220)
-            .help(profileBinding.wrappedValue.description)
-            .disabled(controller.isScanning)
-
-            Menu {
-                Picker("Auto-rescan", selection: rescanBinding) {
-                    ForEach(RescanInterval.allCases) { i in
-                        Text(i.menuLabel).tag(i)
-                    }
-                }
-                .pickerStyle(.inline)
-            } label: {
-                HStack(spacing: 4) {
-                    Image(systemName: rescanBinding.wrappedValue == .off
-                          ? "arrow.clockwise"
-                          : "arrow.clockwise.circle.fill")
-                        .foregroundStyle(rescanBinding.wrappedValue == .off ? Color.secondary : Color.accentColor)
-                    if rescanBinding.wrappedValue != .off {
-                        Text(rescanBinding.wrappedValue.label)
-                            .font(.caption)
-                            .monospacedDigit()
-                    }
-                }
-            }
-            .menuStyle(.borderlessButton)
-            .fixedSize()
-            .help("Auto-rescan interval")
-            .accessibilityLabel("Auto-rescan interval")
-
-            if case .scanning(let scanned, let total) = controller.state {
-                ProgressView(value: Double(scanned), total: Double(max(total, 1)))
-                    .progressViewStyle(.linear)
-                    .frame(width: 160)
-            }
-
-            if !controller.hosts.isEmpty {
-                Button {
-                    portError = nil
-                    showingPortScan = true
-                } label: {
-                    Label("Port Scan…", systemImage: "network.badge.shield.half.filled")
-                }
-                .disabled(controller.selection.isEmpty || controller.portScanInProgress || controller.isScanning)
-                .popover(isPresented: $showingPortScan, arrowEdge: .bottom) {
-                    portScanPopover
-                }
-            }
-
-            if controller.portScanInProgress {
-                HStack(spacing: 6) {
-                    ProgressView(
-                        value: Double(controller.portScanProgress.scanned),
-                        total: Double(max(controller.portScanProgress.total, 1))
-                    )
-                    .progressViewStyle(.linear)
-                    .frame(width: 100)
-                    Text("\(controller.portScanProgress.scanned) / \(controller.portScanProgress.total)")
-                        .font(.caption)
-                        .monospacedDigit()
-                        .foregroundStyle(.secondary)
-                    Button {
-                        controller.cancelPortScan()
-                    } label: {
-                        Image(systemName: "xmark.circle.fill")
-                    }
-                    .buttonStyle(.plain)
-                    .help("Cancel port scan")
-                }
-            }
-
-            if !controller.hosts.isEmpty {
-                Menu {
-                    Button("Save as CSV…") { saveCSV() }
-                    Button("Save as JSON…") { saveJSON() }
-                    Button("Save as IP:Port List…") { saveIPPort() }
-                    Button("Save as Text Report…") { saveTextReport() }
-                    Divider()
-                    Button("Copy to Clipboard (CSV)") { copyCSV() }
-                    Button("Copy to Clipboard (JSON)") { copyJSON() }
-                    Button("Copy to Clipboard (IP:Port)") { copyIPPort() }
-                    Button("Copy to Clipboard (Text Report)") { copyTextReport() }
-                } label: {
-                    Label("Export", systemImage: "square.and.arrow.up")
-                }
-                .menuStyle(.borderlessButton)
-                .fixedSize()
-            }
-
-            Spacer()
-
-            if !controller.hosts.isEmpty {
-                TextField("", text: $controller.searchQuery, prompt: Text("Search…"))
-                    .textFieldStyle(.roundedBorder)
-                    .frame(maxWidth: 200)
-                    .focused($searchFieldFocused)
-
-                Menu {
-                    Toggle("Has open ports", isOn: $controller.filterHasOpenPorts)
-                    Toggle("Has label", isOn: $controller.filterHasLabel)
-                    Toggle("Has vendor", isOn: $controller.filterHasVendor)
-                    Toggle("Identified device type", isOn: $controller.filterIdentifiedDevice)
-                    if controller.hasActiveScopeFilters {
-                        Divider()
-                        Button("Clear filters") { controller.clearScopeFilters() }
-                    }
-                } label: {
-                    Image(systemName: controller.hasActiveScopeFilters
-                          ? "line.3.horizontal.decrease.circle.fill"
-                          : "line.3.horizontal.decrease.circle")
-                        .foregroundStyle(controller.hasActiveScopeFilters ? Color.accentColor : .secondary)
-                }
-                .menuStyle(.borderlessButton)
-                .fixedSize()
-                .help("Filters")
-                .accessibilityLabel("Filters")
-
-                Toggle("Dead hosts", isOn: $controller.showDeadHosts)
-                    .toggleStyle(.checkbox)
-                    .controlSize(.small)
-                    .help("Show unresponsive IPs")
-
-                // Hidden ⌘C handler — receives keyboard shortcut without taking visual space.
-                Button("") { copySelectedIPs() }
-                    .keyboardShortcut("c", modifiers: [.command])
-                    .frame(width: 0, height: 0)
-                    .opacity(0)
-                    .accessibilityHidden(true)
-
-                Menu {
-                    Toggle("Label", isOn: $showColLabel)
-                    Toggle("Hostname", isOn: $showColHostname)
-                    Toggle("MAC", isOn: $showColMAC)
-                    Toggle("Vendor", isOn: $showColVendor)
-                    Toggle("Title", isOn: $showColTitle)
-                    Toggle("RTT", isOn: $showColRTT)
-                    Toggle("TTL", isOn: $showColTTL)
-                    Toggle("Ports", isOn: $showColPorts)
-                    Divider()
-                    Button("Show All") {
-                        showColLabel = true; showColHostname = true; showColMAC = true
-                        showColVendor = true; showColTitle = true; showColRTT = true
-                        showColTTL = true; showColPorts = true
-                    }
-                    Button("Reset to Default") {
-                        showColLabel = true; showColHostname = true; showColMAC = false
-                        showColVendor = true; showColTitle = false; showColRTT = false
-                        showColTTL = false; showColPorts = true
-                    }
-                } label: {
-                    Image(systemName: "rectangle.split.3x1")
-                }
-                .menuStyle(.borderlessButton)
-                .fixedSize()
-                .help("Show / hide columns")
-                .accessibilityLabel("Column visibility")
-            }
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-    }
-
     // MARK: - Subnet calculator popover
 
     @ViewBuilder
-    private var subnetCalcPopover: some View {
+    var subnetCalcPopover: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Subnet calculator")
                 .font(.headline)
@@ -567,7 +347,7 @@ struct ContentView: View {
     }
 
     @ViewBuilder
-    private func subnetRow(_ key: String, _ value: String) -> some View {
+    func subnetRow(_ key: String, _ value: String) -> some View {
         HStack(spacing: 8) {
             Text(key)
                 .font(.caption)
@@ -582,7 +362,7 @@ struct ContentView: View {
     // MARK: - Imported targets chip
 
     @ViewBuilder
-    private func importedChip(_ imported: ScanController.ImportedTargets) -> some View {
+    func importedChip(_ imported: ScanController.ImportedTargets) -> some View {
         HStack(spacing: 8) {
             Image(systemName: "doc.text")
                 .foregroundStyle(.tint)
@@ -602,6 +382,7 @@ struct ContentView: View {
             }
             .buttonStyle(.plain)
             .help("Clear imported list")
+            .disabled(controller.isScanning)
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 6)
@@ -612,7 +393,7 @@ struct ContentView: View {
         .frame(maxWidth: 380, alignment: .leading)
     }
 
-    private func openTargetFile() {
+    func openTargetFile() {
         let panel = NSOpenPanel()
         panel.allowsMultipleSelection = false
         panel.allowedContentTypes = [.plainText, .commaSeparatedText, .text]
@@ -634,142 +415,10 @@ struct ContentView: View {
         }
     }
 
-    // MARK: - Content
-
-    @ViewBuilder
-    private var content: some View {
-        if controller.hosts.isEmpty {
-            emptyState
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-        } else {
-            Table(controller.filteredHosts, selection: $controller.selection, sortOrder: $controller.sortOrder) {
-                TableColumn("●") { host in
-                    Circle()
-                        .fill(host.status == .alive ? Color.green : Color.gray)
-                        .frame(width: 8, height: 8)
-                        .help(host.status == .alive ? "Alive" : (host.status == .dead ? "Dead" : "Scanning"))
-                        .accessibilityLabel(host.status == .alive ? "Alive" : (host.status == .dead ? "Dead" : "Scanning"))
-                }
-                .width(20)
-
-                TableColumn("IP", value: \.ipNumeric) { host in
-                    let kind = DeviceClassifier.classify(host)
-                    HStack(spacing: 6) {
-                        Image(systemName: kind.sfSymbol)
-                            .font(.caption)
-                            .foregroundStyle(kind == .unknown ? Color.secondary.opacity(0.4) : Color.secondary)
-                            .help(kind.label)
-                            .frame(width: 14, alignment: .center)
-                        Text(highlighted(host.ip)).monospaced()
-                    }
-                }
-                .width(min: 130, ideal: 145)
-
-                if controller.diff != nil {
-                    TableColumn("Δ") { host in
-                        if let change = controller.change(for: host) {
-                            Image(systemName: change.sfSymbol)
-                                .foregroundStyle(diffTint(change))
-                                .help(change.label)
-                                .accessibilityLabel(change.label)
-                        } else {
-                            Text("")
-                        }
-                    }
-                    .width(20)
-                }
-
-                if showColLabel {
-                    TableColumn("Label") { host in
-                        if let label = controller.label(for: host) {
-                            Text(highlighted(label)).foregroundStyle(.tint)
-                        } else {
-                            Text("")
-                        }
-                    }
-                    .width(min: 80, ideal: 130)
-                }
-
-                if showColHostname {
-                    TableColumn("Hostname") { host in
-                        if let h = host.hostname {
-                            Text(highlighted(h))
-                        } else {
-                            Text("—").foregroundStyle(.secondary)
-                        }
-                    }
-                    .width(min: 110, ideal: 170)
-                }
-
-                if showColMAC {
-                    TableColumn("MAC") { host in
-                        if let m = host.mac {
-                            Text(highlighted(m.uppercased())).monospaced()
-                        } else {
-                            Text("—").monospaced().foregroundStyle(.secondary)
-                        }
-                    }
-                    .width(min: 120, ideal: 140)
-                }
-
-                if showColVendor {
-                    TableColumn("Vendor") { host in
-                        if let v = host.vendor {
-                            Text(highlighted(v))
-                        } else {
-                            Text("—").foregroundStyle(.secondary)
-                        }
-                    }
-                    .width(min: 100, ideal: 150)
-                }
-
-                if showColTitle {
-                    TableColumn("Title") { host in
-                        if let t = host.serviceTitle {
-                            Text(highlighted(t))
-                                .lineLimit(1)
-                                .truncationMode(.tail)
-                                .help(t)
-                        } else {
-                            Text("—").foregroundStyle(.secondary)
-                        }
-                    }
-                    .width(min: 80, ideal: 130)
-                }
-
-                if showColRTT || showColTTL {
-                    TableColumn(rttTtlHeader) { host in
-                        Text(rttTtlCell(host))
-                            .monospaced()
-                            .foregroundStyle(.secondary)
-                            .help(ttlHint(for: host.ttl))
-                    }
-                    .width(min: 60, ideal: 90, max: 140)
-                }
-
-                if showColPorts {
-                    TableColumn("Ports") { host in
-                        Text(PortScanner.formatList(host.openPorts))
-                            .foregroundStyle(.secondary)
-                    }
-                    .width(min: 80, ideal: 140)
-                }
-            }
-            .frame(maxHeight: .infinity)
-            .contextMenu(forSelectionType: Host.ID.self) { ids in
-                contextMenu(for: ids)
-            } primaryAction: { ids in
-                if ids.count == 1, let id = ids.first, let h = host(forID: id) {
-                    HostActions.openBrowser(ip: h.ip)
-                }
-            }
-        }
-    }
-
     // MARK: - Context menu
 
     @ViewBuilder
-    private func contextMenu(for ids: Set<Host.ID>) -> some View {
+    func contextMenu(for ids: Set<Host.ID>) -> some View {
         if ids.count == 1, let id = ids.first, let h = host(forID: id) {
             singleHostMenu(h)
         } else if ids.count > 1 {
@@ -778,7 +427,11 @@ struct ContentView: View {
     }
 
     @ViewBuilder
-    private func singleHostMenu(_ h: Host) -> some View {
+    func singleHostMenu(_ h: Host) -> some View {
+        Button("Show Device Details", systemImage: "sidebar.right") {
+            controller.selection = [h.id]
+            inspectorPresented = true
+        }
         Section {
             Button("Open in Browser (http)", systemImage: "safari") {
                 HostActions.openBrowser(ip: h.ip)
@@ -798,11 +451,13 @@ struct ContentView: View {
             Button("Open SMB Share", systemImage: "externaldrive.connected.to.line.below") {
                 HostActions.openSMB(ip: h.ip)
             }
+            Menu("Advanced") {
             Button("Open AFP Share", systemImage: "externaldrive") {
                 HostActions.openAFP(ip: h.ip)
             }
             Button("Telnet in Terminal", systemImage: "terminal.fill") {
                 HostActions.openTelnet(ip: h.ip)
+            }
             }
             Button("Ping in Terminal", systemImage: "wave.3.right") {
                 HostActions.pingInTerminal(ip: h.ip)
@@ -839,7 +494,7 @@ struct ContentView: View {
     }
 
     @ViewBuilder
-    private func multiHostMenu(ids: Set<Host.ID>) -> some View {
+    func multiHostMenu(ids: Set<Host.ID>) -> some View {
         let hosts = ids.compactMap { host(forID: $0) }
         let wakeable = hosts.filter { $0.mac != nil }.count
         Button("Refresh (\(hosts.count) hosts)", systemImage: "arrow.clockwise") {
@@ -870,42 +525,10 @@ struct ContentView: View {
         }
     }
 
-    @ViewBuilder
-    private var emptyState: some View {
-        if let err = controller.lastError {
-            ContentUnavailableView {
-                Label("iPScanner", systemImage: "exclamationmark.triangle")
-                    .foregroundStyle(.orange)
-            } description: {
-                Text(err).foregroundStyle(.red)
-            }
-        } else {
-            let trimmed = controller.rangeInput.trimmingCharacters(in: .whitespaces)
-            ContentUnavailableView {
-                Label("iPScanner", systemImage: "network")
-            } description: {
-                if !trimmed.isEmpty {
-                    VStack(spacing: 4) {
-                        Text("Ready to scan")
-                            .foregroundStyle(.secondary)
-                        Text(trimmed)
-                            .monospaced()
-                            .foregroundStyle(.tint)
-                        Text("Press Scan or ⌘R")
-                            .font(.caption)
-                            .foregroundStyle(.tertiary)
-                    }
-                } else {
-                    Text("Enter an IP range and press Scan.")
-                }
-            }
-        }
-    }
-
     // MARK: - Port scan popover
 
     @ViewBuilder
-    private var portScanPopover: some View {
+    var portScanPopover: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Port scan for \(controller.selection.count) host(s)")
                 .font(.headline)
@@ -961,7 +584,7 @@ struct ContentView: View {
         .frame(width: 360)
     }
 
-    private var portPresetBinding: Binding<String> {
+    var portPresetBinding: Binding<String> {
         Binding(
             get: {
                 switch portsInput {
@@ -986,11 +609,11 @@ struct ContentView: View {
 
     // MARK: - Export
 
-    private func currentRows() -> [ExportService.Row] {
+    func currentRows() -> [ExportService.Row] {
         ExportService.rows(from: controller.filteredHosts) { controller.label(for: $0) }
     }
 
-    private func saveCSV() {
+    func saveCSV() {
         let csv = ExportService.csv(rows: currentRows())
         let panel = NSSavePanel()
         panel.allowedContentTypes = [.commaSeparatedText]
@@ -1001,7 +624,7 @@ struct ContentView: View {
         }
     }
 
-    private func saveJSON() {
+    func saveJSON() {
         guard let data = try? ExportService.json(rows: currentRows()) else { return }
         let panel = NSSavePanel()
         panel.allowedContentTypes = [.json]
@@ -1012,17 +635,17 @@ struct ContentView: View {
         }
     }
 
-    private func copyCSV() {
+    func copyCSV() {
         HostActions.copy(ExportService.csv(rows: currentRows()))
     }
 
-    private func copyJSON() {
+    func copyJSON() {
         guard let data = try? ExportService.json(rows: currentRows()),
               let str = String(data: data, encoding: .utf8) else { return }
         HostActions.copy(str)
     }
 
-    private func saveIPPort() {
+    func saveIPPort() {
         let text = ExportService.ipPortList(rows: currentRows())
         let panel = NSSavePanel()
         panel.allowedContentTypes = [.plainText]
@@ -1033,11 +656,11 @@ struct ContentView: View {
         }
     }
 
-    private func copyIPPort() {
+    func copyIPPort() {
         HostActions.copy(ExportService.ipPortList(rows: currentRows()))
     }
 
-    private func saveTextReport() {
+    func saveTextReport() {
         let text = textReportString()
         let panel = NSSavePanel()
         panel.allowedContentTypes = [.plainText]
@@ -1048,11 +671,11 @@ struct ContentView: View {
         }
     }
 
-    private func copyTextReport() {
+    func copyTextReport() {
         HostActions.copy(textReportString())
     }
 
-    private func textReportString() -> String {
+    func textReportString() -> String {
         let rangeLabel: String
         if let imported = controller.importedTargets {
             rangeLabel = "Imported list: \(imported.url.lastPathComponent) (\(imported.targets.count) targets)"
@@ -1062,7 +685,7 @@ struct ContentView: View {
         let scannedTotal: Int
         switch controller.state {
         case .scanning(_, let total): scannedTotal = total
-        case .done(_, let total): scannedTotal = total
+        case .done(_, let total), .stopped(_, let total): scannedTotal = total
         case .idle: scannedTotal = controller.hosts.count
         }
         return ExportService.textReport(
@@ -1073,7 +696,7 @@ struct ContentView: View {
         )
     }
 
-    private var rttTtlHeader: String {
+    var rttTtlHeader: String {
         switch (showColRTT, showColTTL) {
         case (true, true): "RTT / TTL"
         case (true, false): "RTT"
@@ -1082,7 +705,7 @@ struct ContentView: View {
         }
     }
 
-    private func rttTtlCell(_ host: Host) -> String {
+    func rttTtlCell(_ host: Host) -> String {
         var parts: [String] = []
         if showColRTT {
             parts.append(host.rttMs.map { String(format: "%.1f ms", $0) } ?? "—")
@@ -1095,7 +718,7 @@ struct ContentView: View {
 
     /// Rough heuristic translating an ICMP TTL into a probable origin OS.
     /// Real values vary; this is a hint only.
-    private func ttlHint(for ttl: Int?) -> String {
+    func ttlHint(for ttl: Int?) -> String {
         guard let ttl else { return "" }
         if ttl >= 250 { return "TTL \(ttl) — likely Cisco / network device" }
         if ttl >= 120 { return "TTL \(ttl) — likely Windows" }
@@ -1105,7 +728,7 @@ struct ContentView: View {
 
     // MARK: - Selection helpers
 
-    private func copySelectedIPs() {
+    func copySelectedIPs() {
         let ips = controller.hosts
             .filter { controller.selection.contains($0.id) }
             .map(\.ip)
@@ -1115,7 +738,7 @@ struct ContentView: View {
 
     // MARK: - Snapshot save / load
 
-    private func saveSnapshot() {
+    func saveSnapshot() {
         let snapshot = controller.makeSnapshot()
         guard let data = try? SnapshotIO.encode(snapshot) else { return }
         let panel = NSSavePanel()
@@ -1127,7 +750,7 @@ struct ContentView: View {
         }
     }
 
-    private func openSnapshot() {
+    func openSnapshot() {
         let panel = NSOpenPanel()
         panel.allowedContentTypes = [.json]
         panel.allowsMultipleSelection = false
@@ -1142,7 +765,7 @@ struct ContentView: View {
         }
     }
 
-    private func openComparisonBaseline() {
+    func openComparisonBaseline() {
         let panel = NSOpenPanel()
         panel.allowedContentTypes = [.json]
         panel.allowsMultipleSelection = false
@@ -1158,7 +781,7 @@ struct ContentView: View {
         }
     }
 
-    private struct PortScanEstimate {
+    struct PortScanEstimate {
         let hosts: Int
         let ports: Int
         let totalProbes: Int
@@ -1166,7 +789,7 @@ struct ContentView: View {
         let isHeavy: Bool
     }
 
-    private var portScanEstimate: PortScanEstimate? {
+    var portScanEstimate: PortScanEstimate? {
         let hosts = controller.selection.count
         guard hosts > 0,
               let parsed = PortScanner.parsePorts(portsInput) else { return nil }
@@ -1187,7 +810,7 @@ struct ContentView: View {
         )
     }
 
-    private func startPortScan() {
+    func startPortScan() {
         guard let ports = PortScanner.parsePorts(portsInput) else {
             portError = "Invalid port input (e.g. 22, 80, 443 or 8000-8100)"
             return
@@ -1204,7 +827,7 @@ struct ContentView: View {
     // MARK: - Warnings popover
 
     @ViewBuilder
-    private var warningsPopover: some View {
+    var warningsPopover: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("Scan warnings")
                 .font(.headline)
@@ -1229,7 +852,7 @@ struct ContentView: View {
     // MARK: - Diff popover
 
     @ViewBuilder
-    private func diffPopover(_ diff: SnapshotDiff) -> some View {
+    func diffPopover(_ diff: SnapshotDiff) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
                 Text("Comparison")
@@ -1290,75 +913,7 @@ struct ContentView: View {
 
     // MARK: - Status bar
 
-    @ViewBuilder
-    private var statusBar: some View {
-        HStack(spacing: 16) {
-            switch controller.state {
-            case .idle:
-                Text("Ready")
-                    .foregroundStyle(.secondary)
-            case .scanning(let scanned, let total):
-                Text("\(scanned) of \(total) scanned")
-                Text("•").foregroundStyle(.secondary)
-                Text("\(controller.aliveCount) alive").foregroundStyle(.green)
-            case .done(let scanned, let total):
-                Text("Completed: \(scanned) of \(total)")
-                Text("•").foregroundStyle(.secondary)
-                Text("\(controller.aliveCount) alive").foregroundStyle(.green)
-            }
-            if !controller.searchQuery.isEmpty && !controller.hosts.isEmpty {
-                Text("•").foregroundStyle(.secondary)
-                Text("\(controller.filteredHosts.count) of \(controller.hosts.count) match")
-                    .foregroundStyle(.tint)
-                    .monospacedDigit()
-            }
-            if !controller.warnings.isEmpty {
-                Text("•").foregroundStyle(.secondary)
-                Button {
-                    showingWarnings.toggle()
-                } label: {
-                    HStack(spacing: 4) {
-                        Image(systemName: "exclamationmark.triangle.fill")
-                        Text("\(controller.warnings.count) warning\(controller.warnings.count == 1 ? "" : "s")")
-                    }
-                    .foregroundStyle(.orange)
-                }
-                .buttonStyle(.plain)
-                .popover(isPresented: $showingWarnings, arrowEdge: .top) {
-                    warningsPopover
-                }
-            }
-            if let diff = controller.diff {
-                Text("•").foregroundStyle(.secondary)
-                Button {
-                    showingDiff.toggle()
-                } label: {
-                    HStack(spacing: 4) {
-                        Image(systemName: "arrow.left.arrow.right")
-                        Text("+\(diff.newCount) ~\(diff.modifiedCount) -\(diff.missingCount)")
-                            .monospacedDigit()
-                    }
-                    .foregroundStyle(.tint)
-                }
-                .buttonStyle(.plain)
-                .help("Comparison vs scan from \(diff.baselineCreatedAt.formatted(date: .abbreviated, time: .shortened))")
-                .popover(isPresented: $showingDiff, arrowEdge: .top) {
-                    diffPopover(diff)
-                }
-            }
-            Spacer()
-            if controller.elapsed > 0 {
-                let elapsedFormatted = String(format: "%.1f", controller.elapsed)
-                Text("\(elapsedFormatted)s")
-                    .monospacedDigit()
-                    .foregroundStyle(.secondary)
-            }
-        }
-        .font(.system(size: 12))
-        .padding(.horizontal, 12)
-        .padding(.vertical, 6)
-        .background(.bar)
-    }
+
 }
 
 #Preview {
@@ -1428,6 +983,7 @@ struct RenameRangeSheet: View {
 // MARK: - Update check overlay
 
 private struct UpdateCheckOverlay: ViewModifier {
+    @AppStorage("iPScanner.update.automatic") private var automatic = true
     let updateChecker: UpdateChecker
     @Binding var lastCheckEpoch: Double
     @Binding var skippedVersion: String
@@ -1439,6 +995,7 @@ private struct UpdateCheckOverlay: ViewModifier {
                 handleManualCheck()
             }
             .task {
+                guard automatic else { return }
                 let last = lastCheckEpoch > 0 ? Date(timeIntervalSince1970: lastCheckEpoch) : nil
                 let timestamp = await updateChecker.autoCheckIfNeeded(lastCheckAt: last)
                 lastCheckEpoch = timestamp.timeIntervalSince1970

@@ -13,6 +13,7 @@ struct ScanSnapshot: Codable {
         let ip: String
         let hostname: String?
         let mac: String?
+        let vendorStatus: VendorStatus?
         let vendor: String?
         let rttMs: Double?
         let ttl: Int?
@@ -20,36 +21,53 @@ struct ScanSnapshot: Codable {
         let workgroup: String?
         let openPorts: [Int]
         let serviceTitle: String?
+        let status: Host.Status
 
-        init(ip: String, hostname: String?, mac: String?, vendor: String?,
+        init(ip: String, hostname: String?, mac: String?, vendor: String?, vendorStatus: VendorStatus? = nil,
              rttMs: Double?, ttl: Int?, netbiosName: String? = nil,
-             workgroup: String? = nil, openPorts: [Int], serviceTitle: String?) {
+             workgroup: String? = nil, openPorts: [Int], serviceTitle: String?,
+             status: Host.Status = .alive) {
             self.ip = ip
             self.hostname = hostname
             self.mac = mac
             self.vendor = vendor
+            self.vendorStatus = vendorStatus
             self.rttMs = rttMs
             self.ttl = ttl
             self.netbiosName = netbiosName
             self.workgroup = workgroup
             self.openPorts = openPorts
             self.serviceTitle = serviceTitle
+            self.status = status
         }
 
         // Custom decoder lets older `.ipscan.json` files (no `ttl` / `netbiosName`
         // / `workgroup`) still load.
         init(from decoder: Decoder) throws {
             let c = try decoder.container(keyedBy: CodingKeys.self)
-            self.ip = try c.decode(String.self, forKey: .ip)
+            let ip = try c.decode(String.self, forKey: .ip)
+            // Snapshot files can be hand-edited or come from an untrusted source.
+            // The `ip` field ends up embedded in shell scripts (HostActions), so a
+            // non-IPv4 value here must be rejected at decode time, not sanitized later.
+            guard IPv4.uint32(from: ip) != nil else {
+                throw DecodingError.dataCorruptedError(
+                    forKey: .ip, in: c, debugDescription: "\"\(ip)\" is not a valid IPv4 address"
+                )
+            }
+            self.ip = ip
             self.hostname = try c.decodeIfPresent(String.self, forKey: .hostname)
             self.mac = try c.decodeIfPresent(String.self, forKey: .mac)
             self.vendor = try c.decodeIfPresent(String.self, forKey: .vendor)
+            self.vendorStatus = try c.decodeIfPresent(VendorStatus.self, forKey: .vendorStatus)
             self.rttMs = try c.decodeIfPresent(Double.self, forKey: .rttMs)
             self.ttl = try c.decodeIfPresent(Int.self, forKey: .ttl)
             self.netbiosName = try c.decodeIfPresent(String.self, forKey: .netbiosName)
             self.workgroup = try c.decodeIfPresent(String.self, forKey: .workgroup)
             self.openPorts = try c.decodeIfPresent([Int].self, forKey: .openPorts) ?? []
             self.serviceTitle = try c.decodeIfPresent(String.self, forKey: .serviceTitle)
+            // Older `.ipscan.json` files predate this field; they only ever recorded
+            // alive hosts, so `.alive` is the correct default for them.
+            self.status = try c.decodeIfPresent(Host.Status.self, forKey: .status) ?? .alive
         }
     }
 }

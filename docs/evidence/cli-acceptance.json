@@ -1,0 +1,26 @@
+[
+  {
+    "profile": "quick",
+    "exit": 0,
+    "hosts": 1,
+    "seconds": 0.28
+  },
+  {
+    "profile": "standard",
+    "exit": 0,
+    "hosts": 1,
+    "seconds": 1.14
+  },
+  {
+    "profile": "deep",
+    "exit": 0,
+    "hosts": 1,
+    "seconds": 2.08
+  },
+  {
+    "fileInputWithoutRange": "passed"
+  },
+  {
+    "invalidInputExit": 1
+  }
+]

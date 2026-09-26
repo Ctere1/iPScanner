@@ -35,6 +35,7 @@ enum AppearanceMode: String, CaseIterable, Identifiable {
 
 @main
 struct iPScannerApp: App {
+    @Environment(\.openWindow) private var openWindow
     @AppStorage("iPScanner.appearance") private var appearanceRaw: String = AppearanceMode.system.rawValue
 
     private var appearance: AppearanceMode {
@@ -54,25 +55,26 @@ struct iPScannerApp: App {
                 }
             }
             CommandGroup(replacing: .help) {
+                Button("iPScanner Help") { openWindow(id: "help") }
+                    .keyboardShortcut("?", modifiers: .command)
+                Divider()
                 Button("iPScanner on GitHub") {
                     if let url = URL(string: "https://github.com/canberkys/iPScanner") {
                         NSWorkspace.shared.open(url)
                     }
                 }
-                Button("Report an Issue…") {
-                    if let url = URL(string: "https://github.com/canberkys/iPScanner/issues/new") {
-                        NSWorkspace.shared.open(url)
-                    }
-                }
+                Button("Report an Issue…") { openWindow(id: "feedback") }
                 Divider()
                 Button("Check for Updates…") {
                     NotificationCenter.default.post(name: .iPScannerCommandCheckForUpdates, object: nil)
                 }
                 Divider()
-                Button("Open OUI Database in Finder") {
-                    if let url = Bundle.main.url(forResource: "oui", withExtension: "txt") {
+                Menu("Advanced") {
+                Button("Open Vendor Database in Finder") {
+                    if let url = Bundle.main.url(forResource: "vendors", withExtension: "json") {
                         NSWorkspace.shared.activateFileViewerSelecting([url])
                     }
+                }
                 }
             }
             CommandGroup(replacing: .newItem) {
@@ -124,6 +126,10 @@ struct iPScannerApp: App {
                 .pickerStyle(.inline)
             }
         }
+        Settings { ScannerSettingsView() }
+        Window("iPScanner Help", id: "help") { ProductHelpView() }
+        Window("Feedback", id: "feedback") { FeedbackView() }
+            .windowResizability(.contentSize)
     }
 }
 
@@ -153,9 +159,14 @@ private func showCustomAboutPanel() {
         attributes: bodyAttrs
     ))
 
+    // Read from the bundle instead of a literal so this panel can't drift from
+    // the version CI actually shipped (release.yml syncs MARKETING_VERSION
+    // from the git tag at build time).
+    let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "—"
+
     NSApp.orderFrontStandardAboutPanel(options: [
         .applicationName: "iPScanner",
-        .applicationVersion: "1.2.0",
+        .applicationVersion: version,
         .credits: credits,
         .init(rawValue: "Copyright"): "© 2026 Canberk Kılıçarslan"
     ])

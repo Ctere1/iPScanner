@@ -8,8 +8,8 @@ import Foundation
 ///   ipscanner scan --input FILE  [options]
 ///
 /// Options:
-///   --profile quick|standard|deep   (default: standard)
-///   --ports 22,80,443[,1024-2048]   (no port scan if omitted)
+///   --profile quick|standard|deep   (default: standard; deep auto port-scans + fetches banners even without --ports)
+///   --ports 22,80,443[,1024-2048]   (no port scan if omitted, unless --profile deep)
 ///   --fetch-banners                 (HTTP title / SSH greeting on relevant ports)
 ///   --format json|csv|txt|ip-port   (default: json)
 ///   --output PATH                   (default: stdout)

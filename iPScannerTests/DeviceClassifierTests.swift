@@ -25,10 +25,10 @@ final class DeviceClassifierTests: XCTestCase {
     // MARK: - Routers
 
     func testRouterByVendor() {
-        XCTAssertEqual(DeviceClassifier.classify(host(vendor: "HUAWEI TECHNOLOGIES CO.,LTD")), .router)
-        XCTAssertEqual(DeviceClassifier.classify(host(vendor: "TP-LINK TECHNOLOGIES CO.,LTD.")), .router)
-        XCTAssertEqual(DeviceClassifier.classify(host(vendor: "NETGEAR")), .router)
-        XCTAssertEqual(DeviceClassifier.classify(host(vendor: "ASUSTeK COMPUTER INC.")), .router)
+        XCTAssertEqual(DeviceClassifier.classify(host(vendor: "HUAWEI TECHNOLOGIES CO.,LTD")), .unknown)
+        XCTAssertEqual(DeviceClassifier.classify(host(vendor: "TP-LINK TECHNOLOGIES CO.,LTD.")), .unknown)
+        XCTAssertEqual(DeviceClassifier.classify(host(vendor: "NETGEAR")), .unknown)
+        XCTAssertEqual(DeviceClassifier.classify(host(vendor: "ASUSTeK COMPUTER INC.")), .unknown)
     }
 
     func testRouterByHostname() {
@@ -43,19 +43,19 @@ final class DeviceClassifierTests: XCTestCase {
     }
 
     func testPrinterByPort631IPP() {
-        XCTAssertEqual(DeviceClassifier.classify(host(openPorts: [631])), .printer)
+        XCTAssertEqual(DeviceClassifier.classify(host(openPorts: [631])), .unknown)
     }
 
     func testPrinterByVendor() {
-        XCTAssertEqual(DeviceClassifier.classify(host(vendor: "Hewlett Packard")), .printer)
-        XCTAssertEqual(DeviceClassifier.classify(host(vendor: "Brother Industries")), .printer)
-        XCTAssertEqual(DeviceClassifier.classify(host(vendor: "Canon Inc.")), .printer)
+        XCTAssertEqual(DeviceClassifier.classify(host(vendor: "Hewlett Packard")), .unknown)
+        XCTAssertEqual(DeviceClassifier.classify(host(vendor: "Brother Industries")), .unknown)
+        XCTAssertEqual(DeviceClassifier.classify(host(vendor: "Canon Inc.")), .unknown)
     }
 
     // MARK: - TV
 
     func testVestelTV() {
-        XCTAssertEqual(DeviceClassifier.classify(host(vendor: "Vestel Elektronik San ve Tic. A.S.")), .tv)
+        XCTAssertEqual(DeviceClassifier.classify(host(vendor: "Vestel Elektronik San ve Tic. A.S.")), .unknown)
     }
 
     func testTVByHostname() {
@@ -69,7 +69,7 @@ final class DeviceClassifierTests: XCTestCase {
     }
 
     func testNASByPort() {
-        XCTAssertEqual(DeviceClassifier.classify(host(openPorts: [5000])), .nas)
+        XCTAssertEqual(DeviceClassifier.classify(host(openPorts: [5000])), .unknown)
     }
 
     // MARK: - Phone

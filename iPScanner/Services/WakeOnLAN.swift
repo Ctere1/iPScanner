@@ -2,20 +2,14 @@ import Foundation
 import Network
 
 enum WakeOnLAN {
-    enum WoLError: Error { case invalidMAC, sendFailed(Error) }
+    enum WoLError: Error { case invalidMAC, timedOut, cancelled, sendFailed(Error) }
 
     static func wake(
         mac: String,
         broadcast: String = "255.255.255.255",
         port: UInt16 = 9
     ) async throws {
-        guard let bytes = parseMAC(mac) else { throw WoLError.invalidMAC }
-
-        let payload: Data = {
-            var p = Data(repeating: 0xFF, count: 6)
-            for _ in 0..<16 { p.append(contentsOf: bytes) }
-            return p
-        }()
+        guard let payload = magicPacket(mac: mac) else { throw WoLError.invalidMAC }
 
         guard let nwPort = NWEndpoint.Port(rawValue: port) else { throw WoLError.invalidMAC }
 
@@ -58,7 +52,7 @@ enum WakeOnLAN {
                                  continuation: continuation,
                                  connection: connection)
                 case .cancelled:
-                    state.finish(.success(()),
+                    state.finish(.failure(WoLError.cancelled),
                                  continuation: continuation,
                                  connection: connection)
                 default:
@@ -67,7 +61,7 @@ enum WakeOnLAN {
             }
 
             queue.asyncAfter(deadline: .now() + 1.5) {
-                state.finish(.success(()),
+                state.finish(.failure(WoLError.timedOut),
                              continuation: continuation,
                              connection: connection)
             }
@@ -76,26 +70,24 @@ enum WakeOnLAN {
         }
     }
 
-    /// Wakes multiple MACs concurrently, ignoring per-host failures.
-    static func wakeAll(macs: [String]) async {
-        await withTaskGroup(of: Void.self) { group in
-            for mac in macs {
-                group.addTask { try? await Self.wake(mac: mac) }
+    static func wakeAll(macs: [String]) async -> (sent: Int, failed: Int) {
+        await withTaskGroup(of: Bool.self) { group in
+            for mac in Set(macs) {
+                group.addTask {
+                    do { try await Self.wake(mac: mac); return true } catch { return false }
+                }
             }
+            var sent = 0, failed = 0
+            for await success in group { if success { sent += 1 } else { failed += 1 } }
+            return (sent, failed)
         }
     }
 
-    private static func parseMAC(_ raw: String) -> [UInt8]? {
-        let cleaned = raw
-            .replacingOccurrences(of: "-", with: ":")
-            .split(separator: ":")
-        guard cleaned.count == 6 else { return nil }
-        var bytes: [UInt8] = []
-        for segment in cleaned {
-            guard let v = UInt8(segment, radix: 16) else { return nil }
-            bytes.append(v)
-        }
-        return bytes
+    static func magicPacket(mac: String) -> Data? {
+        guard let address = MACAddress(mac), address.kind == .universal || address.kind == .local else { return nil }
+        var payload = Data(repeating: 0xFF, count: 6)
+        for _ in 0..<16 { payload.append(contentsOf: address.bytes) }
+        return payload
     }
 
     private final class SendState: @unchecked Sendable {

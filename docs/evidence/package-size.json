@@ -1,0 +1,9 @@
+{
+  "unit": "logical file bytes (not DMG or allocated disk blocks)",
+  "previous_app_bytes": 20957393,
+  "current_app_bytes": 14456769,
+  "raw_registry_bytes": 8795408,
+  "compact_registry_bytes": 1840310,
+  "app_reduction_percent": 31.02,
+  "developer_id_signed_app_bytes": 14525960
+}

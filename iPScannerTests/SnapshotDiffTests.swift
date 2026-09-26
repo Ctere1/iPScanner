@@ -35,7 +35,7 @@ final class SnapshotDiffTests: XCTestCase {
         XCTAssertEqual(diff.newCount, 1)
         XCTAssertEqual(diff.modifiedCount, 0)
         XCTAssertEqual(diff.missingCount, 0)
-        XCTAssertEqual(diff.changesByAnchor["AA:BB:CC:00:00:50"], .new)
+        XCTAssertEqual(diff.changesByAnchor["aa:bb:cc:00:00:50"], .new)
     }
 
     func testRemovedHostAppearsAsMissing() {
@@ -56,7 +56,7 @@ final class SnapshotDiffTests: XCTestCase {
         let current = [host("10.0.0.1", mac: "AA:BB:CC:00:00:01", ports: [80, 443])]
         let diff = SnapshotDiff.compute(current: current, baseline: baseline)
         XCTAssertEqual(diff.modifiedCount, 1)
-        if case .modified(let fields) = diff.changesByAnchor["AA:BB:CC:00:00:01"] {
+        if case .modified(let fields) = diff.changesByAnchor["aa:bb:cc:00:00:01"] {
             XCTAssertTrue(fields.contains(.openPorts))
         } else {
             XCTFail("expected .modified change")
@@ -90,4 +90,37 @@ final class SnapshotDiffTests: XCTestCase {
         let diff = SnapshotDiff.compute(current: [dead], baseline: baseline)
         XCTAssertEqual(diff.missingCount, 1)
     }
+
+    /// A hand-edited or externally produced baseline can repeat the same MAC (or,
+    /// with no MAC, the same IP) across two records. compute() must not crash on
+    /// the duplicate anchor key.
+    func testDuplicateAnchorInBaselineDoesNotCrash() {
+        let baseline = makeBaseline(records: [
+            rec("10.0.0.1", mac: "AA:BB:CC:00:00:01", hostname: "first"),
+            rec("10.0.0.2", mac: "AA:BB:CC:00:00:01", hostname: "second")
+        ])
+        let current = [host("10.0.0.1", mac: "AA:BB:CC:00:00:01")]
+        let diff = SnapshotDiff.compute(current: current, baseline: baseline)
+        XCTAssertNotNil(diff)
+    }
+
+    /// Two alive current hosts sharing the same anchor (both with a nil MAC and,
+    /// pathologically, the same IP) must not crash compute() either.
+    func testDuplicateAnchorInCurrentDoesNotCrash() {
+        let baseline = makeBaseline(records: [rec("10.0.0.1")])
+        let current = [host("10.0.0.1", hostname: "a"), host("10.0.0.1", hostname: "b")]
+        let diff = SnapshotDiff.compute(current: current, baseline: baseline)
+        XCTAssertNotNil(diff)
+    }
+    func testLegacyShortMACDoesNotCreateFalseDiff() {
+        let baseline = makeBaseline(records: [rec("10.0.0.1", mac: "a8:bb:cc:0:0:1")])
+        let current = [host("10.0.0.1", mac: "A8-BB-CC-00-00-01")]
+        XCTAssertTrue(SnapshotDiff.compute(current: current, baseline: baseline).changesByAnchor.isEmpty)
+    }
+    func testLegacyLabelSurvivesCanonicalMACFormatting() {
+        let labels = ["a8:bb:cc:0:0:1": "Office", "10.0.0.2": "IP label"]
+        XCTAssertEqual(MACAddress.label(in: labels, mac: "A8BB.CC00.0001", ip: "10.0.0.1"), "Office")
+        XCTAssertEqual(MACAddress.label(in: labels, mac: nil, ip: "10.0.0.2"), "IP label")
+    }
+
 }

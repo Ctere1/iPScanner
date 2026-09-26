@@ -16,16 +16,29 @@
 
 Open-source macOS counterpart to Advanced IP Scanner. Built with native SwiftUI, zero third-party dependencies, universal binary (Apple Silicon + Intel).
 
+## Help and preferences
+
+Open **Help → iPScanner Help** for getting started, scan profiles, troubleshooting,
+snapshots, exports and keyboard shortcuts. **Help → Report an Issue…** opens a
+bug or feature request draft with a preview and optional environment information.
+Send Feedback creates a public GitHub issue through a Cloudflare Worker after
+you review and submit. No GitHub account is required. The relay requires its
+server-side GitHub secret before live delivery is available.
+
+**Settings (⌘,)** includes the scan profile, appearance and automatic update checks.
+You can always check manually. Update links open release notes and downloads;
+installation is manual.
+
 ## Screenshots
 
 <div align="center">
-  <img src="docs/screenshots/01-results.png" width="800" alt="iPScanner — scan results with the host inspector open">
-  <p><em>Scan results — table with vendors, ports, and labels; the right-side inspector shows the selected host's full detail and a live ping monitor.</em></p>
+  <img src="docs/screenshots/04-wide-light.jpg" width="800" alt="iPScanner 1.3.0 — results and device details">
+  <p><em>Updated results toolbar and explicitly opened device details. This screenshot uses fictional demo devices.</em></p>
 </div>
 
 <div align="center">
-  <img src="docs/screenshots/02-empty.png" width="800" alt="iPScanner — start screen with auto-detected default subnet">
-  <p><em>Start screen — auto-detected default subnet, scan-profile picker (Quick / Standard / Deep), interface picker, auto-rescan menu, and the saved-ranges sidebar.</em></p>
+  <img src="docs/screenshots/03-compact-light.jpg" width="800" alt="iPScanner 1.3.0 — compact window">
+  <p><em>Compact window with saved ranges hidden. Scan profiles and automatic rescan are in Options; target import and subnet calculation are in Tools. Demo data shown.</em></p>
 </div>
 
 ---
@@ -34,30 +47,11 @@ Open-source macOS counterpart to Advanced IP Scanner. Built with native SwiftUI,
 
 1. Download the latest `.dmg` from **[Releases](https://github.com/canberkys/iPScanner/releases/latest)**.
 2. Open the `.dmg` and drag `iPScanner.app` into `Applications`.
-3. On first launch, macOS Gatekeeper will refuse to run the app because it isn't signed with an Apple Developer ID. Pick **one** of the workarounds below.
+3. Open iPScanner from Applications. New release packages must pass Developer ID signing and Apple notarization before publication.
 
-<details>
-<summary><strong>First launch — Gatekeeper workaround</strong></summary>
+> **v1.2.0 packaging issue:** the published DMG can exit immediately because its CLI overwrote the GUI executable. Removing quarantine does not fix this. See [issue #10](https://github.com/canberkys/iPScanner/issues/10) and the [investigation](docs/issue-10-investigation.md). Version 1.3.0 is in preparation; use a verified replacement release when available.
 
-#### Option A — single command (recommended)
-
-Strip every quarantine attribute the system added during download:
-
-```bash
-xattr -cr /Applications/iPScanner.app
-```
-
-This runs once and the app launches normally from then on.
-
-#### Option B — UI route
-
-1. Right-click `iPScanner.app` in Finder → **Open** → **Open**.
-2. If that fails on macOS Sequoia (15) or Tahoe (26+), open **System Settings → Privacy & Security**, scroll to the *Security* section, and click **Open Anyway** next to "iPScanner was blocked".
-3. macOS will prompt once more — click **Open**.
-
-> ℹ️ iPScanner runs without sandboxing because network discovery requires direct ICMP / ARP / TCP socket access. All operations stay local — no telemetry, no third-party calls.
-
-</details>
+Device discovery uses local network operations. There is no telemetry. Automatic update checks contact GitHub Releases at most once every 24 hours; Help also offers a manual check. The app runs without App Sandbox for its network discovery tools.
 
 ---
 
@@ -92,7 +86,7 @@ This runs once and the app launches normally from then on.
 <details>
 <summary><strong>Inspector</strong> — auto-opens on selection, ping monitor, action grid</summary>
 
-Selecting a single host opens the right-side panel automatically. The panel is resizable and its width is persisted.
+Select a host and choose Device Details (⌘⌥I). Details open in a sheet in compact windows and a resizable panel in wide windows.
 
 - Header — device-type icon, IP, vendor, classification
 - Inline label editor with `#tag` syntax (searchable, MAC-anchored, persisted)
@@ -158,15 +152,15 @@ The same scanning engine is exposed as a headless `ipscanner` binary inside the 
 
 ```bash
 # Discover hosts on a subnet, write JSON to a file
-/Applications/iPScanner.app/Contents/MacOS/ipscanner 10.0.0.0/24 \
+/Applications/iPScanner.app/Contents/Helpers/ipscanner 10.0.0.0/24 \
   --profile standard --format json --output scan.json
 
 # Scan a target list from CSV with port scan + banner fetch, emit ip:port lines
-/Applications/iPScanner.app/Contents/MacOS/ipscanner \
+/Applications/iPScanner.app/Contents/Helpers/ipscanner \
   --input targets.csv --ports 22,80,443 --fetch-banners --format ip-port
 
 # Quick (ICMP-only) scan to stdout
-/Applications/iPScanner.app/Contents/MacOS/ipscanner 192.168.1.0/24 --profile quick --format txt
+/Applications/iPScanner.app/Contents/Helpers/ipscanner 192.168.1.0/24 --profile quick --format txt
 ```
 
 Run `--help` for the full flag list. Exit codes: `0` success, `1` argument / input error, `2` runtime / scan error.
@@ -174,7 +168,7 @@ Run `--help` for the full flag list. Exit codes: `0` success, `1` argument / inp
 For convenience you can symlink it onto your `PATH`:
 
 ```bash
-sudo ln -s /Applications/iPScanner.app/Contents/MacOS/ipscanner /usr/local/bin/ipscanner
+sudo ln -s /Applications/iPScanner.app/Contents/Helpers/ipscanner /usr/local/bin/ipscanner
 ```
 
 ---
@@ -195,17 +189,23 @@ open iPScanner.xcodeproj
 <details>
 <summary>OUI databases & tests</summary>
 
-The IEEE OUI databases (`oui.txt`, `oui28.txt`, `oui36.txt`) are bundled in the repo. The release CI workflow refreshes them from `standards-oui.ieee.org` on every tag push.
+Raw IEEE databases are pinned in `data/ieee/`. The app bundles only `iPScanner/Resources/vendors.json`, a compact prefix/organization index. Run `python3 scripts/build-vendor-db.py` to regenerate it; builds validate it with `--check`. Source URLs and SHA-256 hashes are embedded in the index. The original retrieval date is unknown and recorded as null.
+
+MAC addresses are available only when the OS and local network expose them. macOS 27 may require the Network Topology Observation capability and a provisioning profile. Locally administered addresses do not establish a manufacturer. Device types are estimates; inspect a device to see the evidence.
 
 ```bash
 xcodebuild test -scheme iPScanner -destination 'platform=macOS'
 ```
 
-140+ unit tests cover the parsers (CIDR/range, ports, target file), OUI 3-tier vendor lookup, NetBIOS wire-format build & response parsing, subnet calculator, CSV / IP:Port / text-report escaping, snapshot encode/decode, snapshot diff, device classifier, saved-range model, CLI argument parser, and update-version comparison.
+190 application tests cover the parsers (CIDR/range, ports, target file), OUI 3-tier vendor lookup, NetBIOS wire-format build & response parsing, subnet calculator, CSV / IP:Port / text-report escaping, snapshot encode/decode, snapshot diff, device classifier, saved-range model, CLI argument parser, and update-version comparison.
 
 </details>
 
 ---
+
+## Signed distribution
+
+See the [step-by-step signing guide](docs/signing-guide-tr.md) and [1.3.0 release notes](docs/release-notes-1.3.0.md). The CLI now lives in `Contents/Helpers/ipscanner`; update existing scripts accordingly.
 
 ## Roadmap
 
@@ -244,28 +244,22 @@ xcodebuild test -scheme iPScanner -destination 'platform=macOS'
 <details>
 <summary><strong>v1.2.0 — Operations focus — completed</strong></summary>
 
-Moved iPScanner from a desktop tool to a usable operations tool.
+Moved iPScanner from a desktop tool to a usable operations tool. This release also folds in enterprise-enrichment work (NetBIOS, subnet calculator, update check) that shipped inside the same `v1.2.0` tag.
 
 - [x] **File import** — read targets from `.txt` / `.csv` (IP, CIDR, range), dedupe, report invalid lines
 - [x] **TTL column** — parsed from `/sbin/ping` output, optional column, included in CSV / JSON export, OS hint tooltip
 - [x] **IP:Port list export** — flat `ip:port` lines for piping into Nmap, firewall rules, scripts
 - [x] **TXT report export** — human-readable summary suitable for tickets and email
 - [x] **`ipscanner` CLI** — headless binary inside the app bundle. Flags: `--input`, `--ports`, `--profile`, `--fetch-banners`, `--format json|csv|txt|ip-port`, `--output`, `--quiet`, `--help`. Exit codes for automation. Single-IP scans (`ipscanner 127.0.0.1`) supported.
-
-</details>
-
-<details>
-<summary><strong>v1.2.1 — Enterprise enrichment — partially shipped</strong></summary>
-
 - [x] **NetBIOS name fetcher** — UDP 137 query for Windows host name / workgroup when DNS is stale
 - [x] **Subnet calculator popover** — `/N` to network / broadcast / host-count, useful inline tool
 - [x] **In-app update check** — periodic GitHub Releases API check, alert with View Release / Skip / Later, manual `Help → Check for Updates…`
-- [ ] **Notarized release** — Apple Developer ID signature, removes the Gatekeeper friction documented in [Installation](#installation)
 
 </details>
 
-### v1.3 — Persistent operations
+### v1.3 — Hardening + persistent operations
 
+- [ ] **Notarized release** — mandatory signing pipeline is implemented; final certificate-backed release verification is pending.
 - [ ] **launchd-backed scheduled scans** — true background scans even when the app is closed (in-memory auto-rescan stays as the foreground equivalent)
 - [ ] **History / time-series** — long-term per-host first-seen / last-seen / port-state tracking on top of the existing snapshot model
 

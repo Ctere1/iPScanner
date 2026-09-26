@@ -83,4 +83,19 @@ final class TargetFileParserTests: XCTestCase {
         let result = TargetFileParser.parse(text: "10.0.0.1\r\n10.0.0.2\r\n")
         XCTAssertEqual(result.targets, ["10.0.0.1", "10.0.0.2"])
     }
+
+    /// A single line's CIDR can expand to millions of addresses regardless of the
+    /// file's own size. The oversized token must be rejected instead of expanded
+    /// into memory, and it must not take down the rest of a mixed-content file.
+    func testRejectsOversizedCIDRTokenInsteadOfExpanding() {
+        let result = TargetFileParser.parse(text: "10.0.0.1\n10.0.0.0/8\n10.0.0.5")
+        XCTAssertEqual(result.targets, ["10.0.0.1", "10.0.0.5"])
+        XCTAssertEqual(result.invalidLines.map(\.content), ["10.0.0.0/8"])
+    }
+
+    func testRejectsHugeSlashZeroToken() {
+        let result = TargetFileParser.parse(text: "0.0.0.0/0")
+        XCTAssertTrue(result.targets.isEmpty)
+        XCTAssertEqual(result.invalidLines.count, 1)
+    }
 }

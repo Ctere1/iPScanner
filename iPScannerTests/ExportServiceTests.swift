@@ -11,17 +11,23 @@ final class ExportServiceTests: XCTestCase {
         vendor: String? = nil,
         rttMs: Double? = nil,
         ttl: Int? = nil,
-        openPorts: [Int] = []
+        openPorts: [Int] = [],
+        netbiosName: String? = nil,
+        workgroup: String? = nil,
+        serviceTitle: String? = nil,
+        status: iPScanner.Host.Status = .alive
     ) -> ExportService.Row {
         ExportService.Row(
             ip: ip, label: label, hostname: hostname, mac: mac,
-            vendor: vendor, rttMs: rttMs, ttl: ttl, openPorts: openPorts
+            vendor: vendor, rttMs: rttMs, ttl: ttl, openPorts: openPorts,
+            netbiosName: netbiosName, workgroup: workgroup,
+            serviceTitle: serviceTitle, status: status
         )
     }
 
     func testCSVHeader() {
         let csv = ExportService.csv(rows: [])
-        XCTAssertTrue(csv.hasPrefix("IP,Label,Hostname,MAC,Vendor,RTT (ms),TTL,Open Ports"))
+        XCTAssertTrue(csv.hasPrefix("IP,Label,Hostname,MAC,Vendor,RTT (ms),TTL,Open Ports,NetBIOS Name,Workgroup,Service Title,Status"))
     }
 
     func testCSVBasic() {
@@ -38,7 +44,15 @@ final class ExportServiceTests: XCTestCase {
         ])
         let lines = csv.split(separator: "\n")
         XCTAssertEqual(lines.count, 2)
-        XCTAssertEqual(lines[1], "10.0.0.1,Router,hgw.local,AA:BB:CC:DD:EE:FF,Vendor Inc,1.5,64,80;443")
+        XCTAssertEqual(lines[1], "10.0.0.1,Router,hgw.local,AA:BB:CC:DD:EE:FF,Vendor Inc,1.5,64,80;443,,,,alive")
+    }
+
+    func testCSVIncludesNetBIOSAndStatus() {
+        let csv = ExportService.csv(rows: [
+            makeRow(netbiosName: "SRV01", workgroup: "CORP", serviceTitle: "Login Page", status: .dead)
+        ])
+        let lines = csv.split(separator: "\n")
+        XCTAssertEqual(lines[1], "10.0.0.1,,,,,,,,SRV01,CORP,Login Page,dead")
     }
 
     func testCSVEscapesComma() {
@@ -66,8 +80,9 @@ final class ExportServiceTests: XCTestCase {
     func testCSVNilFields() {
         let csv = ExportService.csv(rows: [makeRow()])
         let lines = csv.split(separator: "\n", omittingEmptySubsequences: false)
-        // ip + 7 empty cells (label, hostname, mac, vendor, rtt, ttl, ports)
-        XCTAssertTrue(lines[1].hasPrefix("10.0.0.1,,,,,,,"))
+        // ip + 10 empty cells (label, hostname, mac, vendor, rtt, ttl, ports,
+        // netbiosName, workgroup, serviceTitle) + default "alive" status
+        XCTAssertEqual(lines[1], "10.0.0.1,,,,,,,,,,,alive")
     }
 
     func testCSVMultipleRows() {

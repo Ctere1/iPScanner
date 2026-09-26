@@ -19,9 +19,9 @@ settings:
     CODE_SIGN_STYLE: Manual
     CODE_SIGN_IDENTITY: "-"
     DEVELOPMENT_TEAM: ""
-    ENABLE_HARDENED_RUNTIME: NO
+    ENABLE_HARDENED_RUNTIME: YES
     PRODUCT_BUNDLE_IDENTIFIER: com.canberkkilicarslan.iPScanner
-    MARKETING_VERSION: "1.2.0"
+    MARKETING_VERSION: "1.3.0"
     CURRENT_PROJECT_VERSION: "1"
     GENERATE_INFOPLIST_FILE: NO
     ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
@@ -54,7 +54,6 @@ targets:
         NSAppTransportSecurity:
           NSAllowsArbitraryLoads: true
         NSPrincipalClass: NSApplication
-        NSMainStoryboardFile: ""
         NSLocalNetworkUsageDescription: iPScanner discovers devices and services on your local network using ICMP ping, ARP, and Bonjour/mDNS.
         NSBonjourServices:
           - _airplay._tcp
@@ -75,6 +74,10 @@ targets:
           - _printer._tcp
           - _pdl-datastream._tcp
           - _device-info._tcp
+    preBuildScripts:
+      - name: Validate vendor database
+        script: python3 "$SRCROOT/scripts/build-vendor-db.py" --check
+        basedOnDependencyAnalysis: false
     entitlements:
       path: iPScanner/iPScanner.entitlements
       properties: {}
@@ -93,7 +96,7 @@ targets:
           - "MDNSDiscovery.swift"
     settings:
       base:
-        PRODUCT_NAME: ipscanner
+        PRODUCT_NAME: ipscanner-cli
         PRODUCT_BUNDLE_IDENTIFIER: com.canberkkilicarslan.ipscanner
         SWIFT_VERSION: "5.9"
         MACOSX_DEPLOYMENT_TARGET: 14.4

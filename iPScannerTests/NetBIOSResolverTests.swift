@@ -44,23 +44,32 @@ final class NetBIOSResolverTests: XCTestCase {
 
     /// Builds a synthetic NBSTAT response containing the given list of
     /// (name, type, isGroup) entries plus a trailing 6-byte MAC.
-    private func makeResponse(names: [(String, UInt8, Bool)]) -> Data {
+    ///
+    /// - Parameter echoQuestion: real Windows/Samba NODE STATUS RESPONSEs set
+    ///   QDCOUNT = 0 (no echoed question); pass `true` only to cover the more
+    ///   permissive case where a responder does echo it back.
+    private func makeResponse(names: [(String, UInt8, Bool)], echoQuestion: Bool = false) -> Data {
         var data = Data()
-        // Header: txn id, response flags, qd=1, an=1
+        // Header: txn id, response flags, qd, an=1
         data.append(contentsOf: [0x12, 0x34])
         data.append(contentsOf: [0x84, 0x00])
-        data.append(contentsOf: [0x00, 0x01])
+        data.append(contentsOf: echoQuestion ? [0x00, 0x01] : [0x00, 0x00])
         data.append(contentsOf: [0x00, 0x01])
         data.append(contentsOf: [0x00, 0x00, 0x00, 0x00])
 
-        // Echoed question name (encoded wildcard)
-        data.append(0x20)
-        data.append(contentsOf: Array(("CK" + String(repeating: "AA", count: 15)).utf8))
-        data.append(0x00)
-        data.append(contentsOf: [0x00, 0x21, 0x00, 0x01])
-
-        // Answer record: compression pointer back to question name
-        data.append(contentsOf: [0xC0, 0x0C])
+        // Answer record name: an echoed question section allows a compression
+        // pointer back to it; with no question section, encode the name inline.
+        if echoQuestion {
+            data.append(0x20)
+            data.append(contentsOf: Array(("CK" + String(repeating: "AA", count: 15)).utf8))
+            data.append(0x00)
+            data.append(contentsOf: [0x00, 0x21, 0x00, 0x01])
+            data.append(contentsOf: [0xC0, 0x0C])
+        } else {
+            data.append(0x20)
+            data.append(contentsOf: Array(("CK" + String(repeating: "AA", count: 15)).utf8))
+            data.append(0x00)
+        }
         data.append(contentsOf: [0x00, 0x21, 0x00, 0x01])  // type / class
         data.append(contentsOf: [0x00, 0x00, 0x00, 0x00])  // ttl
         let rdataLength = UInt16(1 + names.count * 18 + 6)  // numNames + names + MAC
@@ -111,5 +120,22 @@ final class NetBIOSResolverTests: XCTestCase {
             ("__MSBROWSE__", 0x01, true)  // ignored types
         ])
         XCTAssertNil(NetBIOSResolver.parseResponse(data))
+    }
+
+    /// QDCOUNT = 0 is what real Windows/Samba NODE STATUS RESPONSEs send — the
+    /// question section is not echoed back. This is the default `makeResponse`
+    /// shape; this test names that assumption explicitly.
+    func testParseHandlesRealisticZeroQuestionCount() {
+        let data = makeResponse(names: [("SRV01", 0x00, false)], echoQuestion: false)
+        let result = NetBIOSResolver.parseResponse(data)
+        XCTAssertEqual(result?.computerName, "SRV01")
+    }
+
+    /// Some responders (or non-standard stacks) may still echo the question
+    /// section (QDCOUNT = 1); the parser must handle that shape too.
+    func testParseHandlesEchoedQuestionCount() {
+        let data = makeResponse(names: [("SRV01", 0x00, false)], echoQuestion: true)
+        let result = NetBIOSResolver.parseResponse(data)
+        XCTAssertEqual(result?.computerName, "SRV01")
     }
 }

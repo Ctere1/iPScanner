@@ -40,12 +40,18 @@ enum TargetFileParser {
         return parse(text: text)
     }
 
+    /// Hard cap on total addresses this parser will expand into memory. A single
+    /// line can contain a CIDR/range token (e.g. `10.0.0.0/8`), so file size alone
+    /// does not bound how many addresses parsing could materialize — this cap must
+    /// be enforced token-by-token, before expanding, not just checked afterward.
+    static let maxAddresses = 65_536
+
     static func parse(text: String) -> Result {
         var seen = Set<UInt32>()
         var invalid: [InvalidLine] = []
         var parsedTokenCount = 0
 
-        for (idx, rawLine) in text.split(whereSeparator: \.isNewline).enumerated() {
+        outer: for (idx, rawLine) in text.split(whereSeparator: \.isNewline).enumerated() {
             let line = rawLine.trimmingCharacters(in: .whitespaces)
             if line.isEmpty || line.hasPrefix("#") { continue }
 
@@ -57,6 +63,10 @@ enum TargetFileParser {
                     parsedTokenCount += 1
                 } else if let range = ScanRange.parse(token) {
                     if range.upperBound >= range.lowerBound {
+                        guard range.hostCount <= maxAddresses, seen.count + range.hostCount <= maxAddresses else {
+                            invalid.append(InvalidLine(lineNumber: idx + 1, content: token))
+                            continue
+                        }
                         for v in range.lowerBound...range.upperBound { seen.insert(v) }
                     }
                     parsedTokenCount += 1
@@ -64,6 +74,7 @@ enum TargetFileParser {
                     invalid.append(InvalidLine(lineNumber: idx + 1, content: token))
                 }
             }
+            if seen.count > maxAddresses { break outer }
         }
 
         let targets = seen.sorted().map(IPv4.string(from:))

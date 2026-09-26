@@ -1,0 +1,13 @@
+# Final local validation — 2026-09-26
+
+190 XCTest tests passed, 0 failures.
+6 Worker tests passed, 0 failures.
+Debug tests, universal Release GUI and CLI builds succeeded.
+Bundle layout and Developer ID deep/strict signature validation passed.
+GUI + CLI: Hardened Runtime, secure timestamp, Team ID 9QB26WKA4K.
+Notarization pending: no configured ipscanner-notary credentials profile.
+Negative bundle tests reject overwritten GUI and missing CLI.
+git diff --check passed.
+
+Contents/MacOS/iPScanner: x86_64 arm64; SHA-256 fbdb21592f3815133301d9f2dadbf0d7812bcf74db468f6a2bd85f21ab99472f
+Contents/Helpers/ipscanner: x86_64 arm64; SHA-256 97e77752b30599c2f424cfaf3628055f22d521765b830e939e61d2fd0b231423

@@ -8,9 +8,29 @@ final class ScanController {
         case idle
         case scanning(scanned: Int, total: Int)
         case done(scanned: Int, total: Int)
+        case stopped(scanned: Int, total: Int)
     }
 
     static let portScanHostConcurrency = 4
+
+    // Injectable operations keep lifecycle tests independent of the local network.
+    struct Operations {
+        var scan: @MainActor ([String], ScanProfile) -> AsyncStream<ScanEvent> = {
+            NetworkScanner(profile: $1).scan(addresses: $0)
+        }
+        var probe: @Sendable (String, [Int]) async -> [Int] = {
+            await PortScanner.probe($0, ports: $1)
+        }
+        var banner: @Sendable (String, [Int]) async -> String? = {
+            await BannerProbe.fetch($0, openPorts: $1)
+        }
+    }
+    private let operations: Operations
+    private var generation = UUID()
+    private(set) var phase = ScanPhase.discovery
+    var canStart: Bool {
+        !isScanning && (importedTargets != nil || !rangeInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+    }
 
     struct ImportedTargets {
         let url: URL
@@ -59,7 +79,8 @@ final class ScanController {
     private var diffBaseline: ScanSnapshot?
     private var portScanTask: Task<Void, Never>?
 
-    init() {
+    init(operations: Operations = Operations()) {
+        self.operations = operations
         self.labels = PersistedStore.loadLabels()
         self.savedRanges = PersistedStore.loadRanges().sorted {
             $0.displayTitle.localizedCaseInsensitiveCompare($1.displayTitle) == .orderedAscending
@@ -114,15 +135,18 @@ final class ScanController {
     // MARK: - Labels
 
     func anchor(for host: Host) -> String {
-        host.mac ?? host.ip
+        MACAddress.anchor(mac: host.mac, ip: host.ip)
     }
 
     func label(for host: Host) -> String? {
-        labels[anchor(for: host)]
+        MACAddress.label(in: labels, mac: host.mac, ip: host.ip)
     }
 
     func setLabel(_ value: String?, for host: Host) {
         let key = anchor(for: host)
+        if let mac = host.mac, let address = MACAddress(mac) {
+            for oldKey in labels.keys.filter({ MACAddress($0) == address }) { labels.removeValue(forKey: oldKey) }
+        }
         let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines)
         if let trimmed, !trimmed.isEmpty {
             labels[key] = trimmed
@@ -227,6 +251,11 @@ final class ScanController {
                 lastError = "Enter an IP range (e.g. 10.0.0.0/24)."
                 return
             }
+            let totalHosts = ScanRange.totalHostCount(parsed.ranges)
+            if totalHosts > 65_536 {
+                lastError = "Total target list too large (\(totalHosts) hosts). Narrow the range or split the file."
+                return
+            }
             addresses = ScanRange.uniqueAddresses(parsed.ranges)
         }
 
@@ -239,10 +268,16 @@ final class ScanController {
             return
         }
 
+        stop()
+        generation = UUID()
+        let runID = generation
+        phase = .discovery
+        selection = []
         lastError = nil
         hosts = []
         hostByIp = [:]
         warnings = []
+        diff = nil
         cancelRescanTimer()
         startDate = Date()
         elapsed = 0
@@ -256,36 +291,50 @@ final class ScanController {
             }
         }
 
-        let scanner = NetworkScanner(profile: profile)
         let runProfile = profile
+        let events = operations.scan(addresses, runProfile)
         scanTask = Task { [weak self] in
-            for await event in scanner.scan(addresses: addresses) {
-                guard let self else { return }
+            for await event in events {
+                guard let self, self.generation == runID, !Task.isCancelled else { return }
                 self.handle(event: event)
-                if Task.isCancelled { break }
             }
-            // Deep profile: chain a common-port scan with banner fetch on alive hosts.
-            if !Task.isCancelled, runProfile.autoPortScan {
-                guard let self else { return }
-                await MainActor.run {
-                    let aliveIDs = Set(self.hosts.filter { $0.status == .alive }.map { $0.id })
-                    guard !aliveIDs.isEmpty,
-                          let ports = PortScanner.parsePorts(PortScanner.defaultPortsInput) else { return }
-                    self.runPortScan(ports: ports, fetchBanners: true, targetIds: aliveIDs)
-                }
+            guard let self, self.generation == runID, !Task.isCancelled else { return }
+            if runProfile.autoPortScan {
+                let targets = self.hosts.filter { $0.status == .alive }
+                self.portScanInProgress = true
+                self.portScanProgress = (0, targets.count)
+                await self.executePortScan(targets: targets, ports: PortScanner.commonPorts,
+                                           fetchBanners: true, runID: runID)
             }
+            guard self.generation == runID, !Task.isCancelled else { return }
+            self.finishRun()
         }
     }
 
     func stop() {
+        generation = UUID() // Invalidate callbacks before cancelling their producers.
         scanTask?.cancel()
         scanTask = nil
+        portScanTask?.cancel()
+        portScanTask = nil
+        portScanInProgress = false
         elapsedTimer?.invalidate()
         elapsedTimer = nil
         cancelRescanTimer()
         if case .scanning(let s, let t) = state {
-            state = .done(scanned: s, total: t)
+            state = .stopped(scanned: s, total: t)
         }
+    }
+
+    private func finishRun() {
+        elapsedTimer?.invalidate()
+        elapsedTimer = nil
+        portScanInProgress = false
+        scanTask = nil
+        portScanTask = nil
+        if case .scanning(let s, let t) = state { state = .done(scanned: s, total: t) }
+        recomputeDiff()
+        scheduleRescan()
     }
 
     private func handleRescanIntervalChange() {
@@ -300,12 +349,13 @@ final class ScanController {
         guard let interval = rescanInterval.seconds else { return }
         cancelRescanTimer()
         nextRescanAt = Date().addingTimeInterval(interval)
+        let scheduledGeneration = generation
         rescanTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: false) { [weak self] _ in
             Task { @MainActor in
-                guard let self else { return }
+                guard let self, self.generation == scheduledGeneration else { return }
                 self.rescanTimer = nil
                 self.nextRescanAt = nil
-                if !self.isScanning, !self.rangeInput.trimmingCharacters(in: .whitespaces).isEmpty {
+                if self.canStart {
                     self.start()
                 }
             }
@@ -321,26 +371,28 @@ final class ScanController {
     func runPortScan(ports: [Int], fetchBanners: Bool = false, targetIds: Set<Host.ID>? = nil) {
         let ids = targetIds ?? selection
         let targets = hosts.filter { ids.contains($0.id) }
-        guard !targets.isEmpty, !portScanInProgress else { return }
+        guard !targets.isEmpty, !isScanning else { return }
+        stop()
+        generation = UUID()
+        let runID = generation
+        state = .scanning(scanned: hosts.count, total: hosts.count)
         portScanInProgress = true
         portScanProgress = (0, targets.count)
-
         portScanTask = Task { [weak self] in
-            await self?.executePortScan(targets: targets, ports: ports, fetchBanners: fetchBanners)
-            await MainActor.run { [weak self] in
-                self?.portScanInProgress = false
-                self?.portScanTask = nil
-            }
+            await self?.executePortScan(targets: targets, ports: ports,
+                                        fetchBanners: fetchBanners, runID: runID)
+            guard let self, self.generation == runID, !Task.isCancelled else { return }
+            self.finishRun()
         }
     }
 
-    func cancelPortScan() {
-        portScanTask?.cancel()
-        portScanTask = nil
-        portScanInProgress = false
-    }
+    func cancelPortScan() { stop() }
 
-    private func executePortScan(targets: [Host], ports: [Int], fetchBanners: Bool) async {
+    private func executePortScan(targets: [Host], ports: [Int], fetchBanners: Bool, runID: UUID) async {
+        guard generation == runID, !Task.isCancelled else { return }
+        phase = .ports
+        let probe = operations.probe
+        let bannerProbe = operations.banner
         var completed = 0
 
         await withTaskGroup(of: (UUID, [Int]).self) { group in
@@ -349,10 +401,10 @@ final class ScanController {
                 guard let host = iter.next() else { break }
                 let ip = host.ip
                 let id = host.id
-                group.addTask { (id, await PortScanner.probe(ip, ports: ports)) }
+                group.addTask { (id, await probe(ip, ports)) }
             }
             while let (id, openPorts) = await group.next() {
-                if Task.isCancelled { group.cancelAll(); break }
+                if Task.isCancelled || generation != runID { group.cancelAll(); break }
                 if let idx = self.hosts.firstIndex(where: { $0.id == id }) {
                     self.hosts[idx].openPorts = openPorts
                     self.hostByIp[self.hosts[idx].ip] = self.hosts[idx]
@@ -362,28 +414,42 @@ final class ScanController {
                 if let next = iter.next() {
                     let ip = next.ip
                     let nextId = next.id
-                    group.addTask { (nextId, await PortScanner.probe(ip, ports: ports)) }
+                    group.addTask { (nextId, await probe(ip, ports)) }
                 }
             }
         }
 
-        if Task.isCancelled { return }
+        if Task.isCancelled || generation != runID { return }
         guard fetchBanners else { return }
+        phase = .banners
 
+        // Use the hosts this port scan actually targeted, not the UI's live
+        // `selection` — the deep-profile auto-scan targets alive hosts with no
+        // regard for what (if anything) the user has selected, so filtering by
+        // `selection` here silently drops every banner fetch when nothing is
+        // selected.
+        let targetIds = Set(targets.map(\.id))
         let bannerTargets: [(UUID, String, [Int])] = hosts
-            .filter { selection.contains($0.id) }
+            .filter { targetIds.contains($0.id) }
             .compactMap { h in
                 let banner = h.openPorts.filter { [80, 443, 22].contains($0) }
                 return banner.isEmpty ? nil : (h.id, h.ip, banner)
             }
 
+        portScanProgress = (0, bannerTargets.count)
         var failures = 0
         await withTaskGroup(of: (UUID, String?).self) { group in
-            for (id, ip, ports) in bannerTargets {
-                group.addTask { (id, await BannerProbe.fetch(ip, openPorts: ports)) }
+            var pending = bannerTargets.makeIterator()
+            for _ in 0..<min(Self.portScanHostConcurrency, bannerTargets.count) {
+                guard let (id, ip, ports) = pending.next() else { break }
+                group.addTask { (id, await bannerProbe(ip, ports)) }
             }
             for await (id, title) in group {
-                if Task.isCancelled { group.cancelAll(); break }
+                if Task.isCancelled || generation != runID { group.cancelAll(); break }
+                portScanProgress = (portScanProgress.scanned + 1, bannerTargets.count)
+                if let (nextID, ip, ports) = pending.next() {
+                    group.addTask { (nextID, await bannerProbe(ip, ports)) }
+                }
                 guard let title else { failures += 1; continue }
                 if let idx = self.hosts.firstIndex(where: { $0.id == id }) {
                     self.hosts[idx].serviceTitle = title
@@ -391,7 +457,7 @@ final class ScanController {
                 }
             }
         }
-        if failures > 0 {
+        if generation == runID, !Task.isCancelled, failures > 0 {
             mergeWarning(.bannerFetchFailures(count: failures))
         }
     }
@@ -405,12 +471,14 @@ final class ScanController {
                 hostname: h.hostname,
                 mac: h.mac,
                 vendor: h.vendor,
+                vendorStatus: h.vendorStatus,
                 rttMs: h.rttMs,
                 ttl: h.ttl,
                 netbiosName: h.netbiosName,
                 workgroup: h.workgroup,
                 openPorts: h.openPorts,
-                serviceTitle: h.serviceTitle
+                serviceTitle: h.serviceTitle,
+                status: h.status
             )
         }
         var relevantLabels: [String: String] = [:]
@@ -467,17 +535,20 @@ final class ScanController {
                 hostname: rec.hostname,
                 mac: rec.mac,
                 vendor: rec.vendor,
+                vendorStatus: .historical,
                 rttMs: rec.rttMs,
                 ttl: rec.ttl,
                 netbiosName: rec.netbiosName,
                 workgroup: rec.workgroup,
                 openPorts: rec.openPorts,
                 serviceTitle: rec.serviceTitle,
-                status: .alive
+                status: rec.status
             )
         }
         hosts = restored
-        hostByIp = Dictionary(uniqueKeysWithValues: restored.map { ($0.ip, $0) })
+        // A hand-edited or externally produced snapshot may repeat an IP; keep the
+        // last record for that IP rather than crashing on the duplicate key.
+        hostByIp = Dictionary(restored.map { ($0.ip, $0) }, uniquingKeysWith: { _, last in last })
         for (key, value) in snapshot.labels where labels[key] == nil {
             labels[key] = value
         }
@@ -500,6 +571,7 @@ final class ScanController {
 
     func refreshHost(_ id: Host.ID) async {
         guard let target = hosts.first(where: { $0.id == id }) else { return }
+        let runID = generation
         let ip = target.ip
         if let idx = hosts.firstIndex(where: { $0.id == id }) {
             hosts[idx].status = .scanning
@@ -507,35 +579,40 @@ final class ScanController {
         }
 
         let result = await NetworkScanner.discover(ip)
-        guard let idx = hosts.firstIndex(where: { $0.id == id }) else { return }
+        guard generation == runID, !Task.isCancelled, let idx = hosts.firstIndex(where: { $0.id == id }) else { return }
 
         guard let result = result else {
             hosts[idx].status = .dead
             hosts[idx].rttMs = nil
             hosts[idx].ttl = nil
+            hosts[idx].vendorStatus = .historical
             hostByIp[ip] = hosts[idx]
             return
         }
 
         try? await Task.sleep(for: .milliseconds(200))
-        let arpTable = await ARPLookup.table()
+        let arp = await ARPLookup.read()
+        let arpTable = arp.entries
         async let hostnameTask = DNSResolver.reverseLookup(ip)
         async let netbiosTask: NetBIOSResolver.Result? =
             profile.includeNetBIOS ? NetBIOSResolver.resolve(ip) : nil
         let hostname = await hostnameTask
         let netbios = await netbiosTask
         let mac = arpTable[ip]
-        let vendor = mac.flatMap { OUILookup.shared.vendor(forMAC: $0) }
+        let resolution = OUILookup.shared.resolve(mac)
 
-        guard let idx2 = hosts.firstIndex(where: { $0.id == id }) else { return }
+        guard generation == runID, !Task.isCancelled, let idx2 = hosts.firstIndex(where: { $0.id == id }) else { return }
         hosts[idx2].status = .alive
         hosts[idx2].rttMs = result.rttMs
         hosts[idx2].ttl = result.ttl
-        if let h = hostname { hosts[idx2].hostname = h }
-        if let m = mac { hosts[idx2].mac = m }
-        if let v = vendor { hosts[idx2].vendor = v }
-        if let n = netbios?.computerName { hosts[idx2].netbiosName = n }
-        if let w = netbios?.workgroup { hosts[idx2].workgroup = w }
+        hosts[idx2].hostname = hostname
+        hosts[idx2].mac = mac
+        hosts[idx2].vendor = resolution.vendor
+        hosts[idx2].vendorStatus = mac == nil && arp.error != nil ? .queryFailed : resolution.status
+        hosts[idx2].netbiosName = netbios?.computerName
+        hosts[idx2].workgroup = netbios?.workgroup
+        hosts[idx2].openPorts = []
+        hosts[idx2].serviceTitle = nil
         hostByIp[ip] = hosts[idx2]
     }
 
@@ -544,11 +621,13 @@ final class ScanController {
             .filter { ids.contains($0.id) }
             .compactMap { $0.mac }
         guard !macs.isEmpty else { return }
-        await WakeOnLAN.wakeAll(macs: macs)
+        await HostActions.wakeAll(macs: macs)
     }
 
     private func mergeWarning(_ w: ScanWarning) {
         switch w {
+        case .arpFailed:
+            if !warnings.contains(w) { warnings.append(w) }
         case .arpEmpty:
             if !warnings.contains(where: { if case .arpEmpty = $0 { return true } else { return false } }) {
                 warnings.append(w)
@@ -566,23 +645,15 @@ final class ScanController {
 
     private func handle(event: ScanEvent) {
         switch event {
+        case .phase(let next):
+            phase = next
         case .progress(let scanned, let total):
             state = .scanning(scanned: scanned, total: total)
         case .warning(let w):
             mergeWarning(w)
         case .host(let h):
             if let existing = hostByIp[h.ip] {
-                var merged = existing
-                if let v = h.hostname { merged.hostname = v }
-                if let v = h.mac { merged.mac = v }
-                if let v = h.vendor { merged.vendor = v }
-                if let v = h.rttMs { merged.rttMs = v }
-                if let v = h.ttl { merged.ttl = v }
-                if let v = h.netbiosName { merged.netbiosName = v }
-                if let v = h.workgroup { merged.workgroup = v }
-                if let v = h.serviceTitle { merged.serviceTitle = v }
-                merged.openPorts = h.openPorts.isEmpty ? merged.openPorts : h.openPorts
-                merged.status = h.status
+                let merged = existing.merged(with: h)
                 hostByIp[h.ip] = merged
                 if let idx = hosts.firstIndex(where: { $0.ip == h.ip }) {
                     hosts[idx] = merged
@@ -592,15 +663,7 @@ final class ScanController {
                 hosts.append(h)
             }
         case .done:
-            elapsedTimer?.invalidate()
-            elapsedTimer = nil
-            if case .scanning(let s, let t) = state {
-                state = .done(scanned: s, total: t)
-            } else {
-                state = .done(scanned: hosts.count, total: hosts.count)
-            }
-            recomputeDiff()
-            scheduleRescan()
+            break // The owner completes only after optional port/banner enrichment.
         }
     }
 }

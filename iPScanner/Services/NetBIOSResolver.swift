@@ -85,9 +85,14 @@ enum NetBIOSResolver {
         let bytes = Array(data)
         var i = 12  // skip the 12-byte header
 
-        // Skip the echoed question section: name (length-prefixed) + QTYPE + QCLASS
-        guard skipName(in: bytes, from: &i) else { return nil }
-        i += 4
+        // Real Windows/Samba NODE STATUS RESPONSEs typically have QDCOUNT = 0 (the
+        // question isn't echoed back) even though our own query sets QDCOUNT = 1 —
+        // only skip a question section if the response actually says it has one.
+        let qdCount = Int(bytes[4]) << 8 | Int(bytes[5])
+        for _ in 0..<qdCount {
+            guard skipName(in: bytes, from: &i) else { return nil }
+            i += 4  // QTYPE + QCLASS
+        }
 
         // Answer record begins. Skip its name.
         guard skipName(in: bytes, from: &i) else { return nil }
@@ -149,17 +154,5 @@ enum NetBIOSResolver {
             i = next
         }
         return false
-    }
-}
-
-private final class ResumeOnce: @unchecked Sendable {
-    private var fired = false
-    private let lock = NSLock()
-    func fire(_ block: () -> Void) {
-        lock.lock()
-        defer { lock.unlock() }
-        guard !fired else { return }
-        fired = true
-        block()
     }
 }

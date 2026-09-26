@@ -1,0 +1,8 @@
+{
+  "name": "ipscanner-feedback-relay",
+  "main": "src/index.js",
+  "compatibility_date": "2026-09-08",
+  "workers_dev": true,
+  "observability": { "enabled": false },
+  "ratelimits": [{ "name": "FEEDBACK_LIMIT", "namespace_id": "1931301", "simple": { "limit": 3, "period": 60 } }]
+}

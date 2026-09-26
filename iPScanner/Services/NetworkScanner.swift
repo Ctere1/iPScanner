@@ -89,10 +89,14 @@ struct NetworkScanner: NetworkScanning {
             return
         }
 
+        continuation.yield(.phase(.enrichment))
         // --- ARP grace ---
         try? await Task.sleep(for: .milliseconds(200))
-        let arpTable = await ARPLookup.table()
-        if arpTable.isEmpty, !alive.isEmpty {
+        guard !Task.isCancelled else { continuation.finish(); return }
+        let arp = await ARPLookup.read()
+        let arpTable = arp.entries
+        if let error = arp.error { continuation.yield(.warning(.arpFailed(error))) }
+        if arp.error == nil, arpTable.isEmpty, !alive.isEmpty {
             continuation.yield(.warning(.arpEmpty))
         }
         let oui = OUILookup.shared
@@ -103,7 +107,7 @@ struct NetworkScanner: NetworkScanning {
 
             func enqueue(_ entry: (ip: String, rtt: Double, ttl: Int?)) {
                 let mac = arpTable[entry.ip]
-                let vendor = mac.flatMap { oui.vendor(forMAC: $0) }
+                let resolution = oui.resolve(mac)
                 group.addTask {
                     async let hostname = DNSResolver.reverseLookup(entry.ip)
                     async let netbios: NetBIOSResolver.Result? =
@@ -114,7 +118,8 @@ struct NetworkScanner: NetworkScanning {
                         ip: entry.ip,
                         hostname: resolvedHost,
                         mac: mac,
-                        vendor: vendor,
+                        vendor: resolution.vendor,
+                        vendorStatus: mac == nil && arp.error != nil ? .queryFailed : resolution.status,
                         rttMs: entry.rtt,
                         ttl: entry.ttl,
                         netbiosName: nb?.computerName,
@@ -147,42 +152,50 @@ struct NetworkScanner: NetworkScanning {
 
     /// Returns RTT and (when ICMP succeeded) TTL if the host responded.
     static func discover(_ ip: String, useTCPFallback: Bool = true) async -> DiscoverResult? {
+        guard !Task.isCancelled else { return nil }
         if let pinged = await ping(ip) { return pinged }
+        guard !Task.isCancelled else { return nil }
         return useTCPFallback ? await tcpFallback(ip) : nil
     }
 
     /// ICMP ping via /sbin/ping. nil if host did not reply.
     static func ping(_ ip: String) async -> DiscoverResult? {
-        await withCheckedContinuation { (continuation: CheckedContinuation<DiscoverResult?, Never>) in
-            DispatchQueue.global(qos: .userInitiated).async {
-                let process = Process()
-                process.executableURL = URL(fileURLWithPath: "/sbin/ping")
-                process.arguments = ["-c", "1", "-W", String(pingTimeoutMs), ip]
-                let stdout = Pipe()
-                process.standardOutput = stdout
-                process.standardError = Pipe()
+        let runner = PingProcess()
+        return await withTaskCancellationHandler {
+            await withCheckedContinuation { (continuation: CheckedContinuation<DiscoverResult?, Never>) in
+                DispatchQueue.global(qos: .userInitiated).async {
+                    let process = Process()
+                    process.executableURL = URL(fileURLWithPath: "/sbin/ping")
+                    process.arguments = ["-c", "1", "-W", String(pingTimeoutMs), ip]
+                    let stdout = Pipe()
+                    process.standardOutput = stdout
+                    process.standardError = Pipe()
 
-                do {
-                    try process.run()
-                } catch {
-                    continuation.resume(returning: nil)
-                    return
+                    do {
+                        guard try runner.start(process) else {
+                            continuation.resume(returning: nil)
+                            return
+                        }
+                    } catch {
+                        continuation.resume(returning: nil)
+                        return
+                    }
+
+                    let data = stdout.fileHandleForReading.readDataToEndOfFile()
+                    process.waitUntilExit()
+
+                    guard process.terminationStatus == 0,
+                          let output = String(data: data, encoding: .utf8),
+                          let timeMatch = output.firstMatch(of: #/time=([0-9.]+)\s*ms/#),
+                          let rtt = Double(timeMatch.1) else {
+                        continuation.resume(returning: nil)
+                        return
+                    }
+                    let ttl = output.firstMatch(of: #/ttl=([0-9]+)/#).flatMap { Int($0.1) }
+                    continuation.resume(returning: DiscoverResult(rttMs: rtt, ttl: ttl))
                 }
-
-                let data = stdout.fileHandleForReading.readDataToEndOfFile()
-                process.waitUntilExit()
-
-                guard process.terminationStatus == 0,
-                      let output = String(data: data, encoding: .utf8),
-                      let timeMatch = output.firstMatch(of: #/time=([0-9.]+)\s*ms/#),
-                      let rtt = Double(timeMatch.1) else {
-                    continuation.resume(returning: nil)
-                    return
-                }
-                let ttl = output.firstMatch(of: #/ttl=([0-9]+)/#).flatMap { Int($0.1) }
-                continuation.resume(returning: DiscoverResult(rttMs: rtt, ttl: ttl))
             }
-        }
+        } onCancel: { runner.cancel() }
     }
 
     /// Concurrent TCP probe across fallback ports. Returns probe duration in ms if any port handshakes.
@@ -193,5 +206,28 @@ struct NetworkScanner: NetworkScanning {
         let elapsedMs = max(0, Date().timeIntervalSince(start) * 1000)
         guard elapsedMs.isFinite else { return nil }
         return DiscoverResult(rttMs: elapsedMs, ttl: nil)
+    }
+}
+
+/// Serializes process launch against cancellation, including cancellation before launch.
+private final class PingProcess: @unchecked Sendable {
+    private let lock = NSLock()
+    private var process: Process?
+    private var cancelled = false
+
+    func start(_ process: Process) throws -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        guard !cancelled else { return false }
+        self.process = process
+        try process.run()
+        return true
+    }
+
+    func cancel() {
+        lock.lock()
+        defer { lock.unlock() }
+        cancelled = true
+        if let process, process.isRunning { process.terminate() }
     }
 }

@@ -8,16 +8,28 @@ enum DNSResolver {
         attributes: .concurrent
     )
 
+    /// Races a reverse-DNS lookup against a timeout WITHOUT a structured task
+    /// group. `rawLookup` wraps a blocking, non-cancellable `getnameinfo()` call
+    /// (Darwin has no cancellable variant); if it ran as a task-group child,
+    /// `withTaskGroup` would still await it to completion before returning even
+    /// after the timeout task "wins" and `cancelAll()` is called — Swift's
+    /// structured concurrency rules await every child before the group scope
+    /// exits, regardless of cancellation. Unstructured `Task {}` has no such
+    /// rule: this function returns the instant either side calls `state.fire`,
+    /// leaving a slow lookup to finish on its own time and discard its result.
     static func reverseLookup(_ ip: String, timeout: Duration = .seconds(1)) async -> String? {
-        await withTaskGroup(of: String?.self) { group in
-            group.addTask { await rawLookup(ip) }
-            group.addTask {
-                try? await Task.sleep(for: timeout)
-                return nil
+        await withCheckedContinuation { (continuation: CheckedContinuation<String?, Never>) in
+            let state = ResumeOnce()
+
+            Task {
+                let result = await rawLookup(ip)
+                state.fire { continuation.resume(returning: result) }
             }
-            let first = await group.next() ?? nil
-            group.cancelAll()
-            return first
+
+            Task {
+                try? await Task.sleep(for: timeout)
+                state.fire { continuation.resume(returning: nil) }
+            }
         }
     }
 

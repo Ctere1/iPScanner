@@ -1,6 +1,7 @@
 import Foundation
 
 enum ScanEvent: Sendable {
+    case phase(ScanPhase)
     case progress(scanned: Int, total: Int)
     case host(Host)
     case warning(ScanWarning)
@@ -8,14 +9,15 @@ enum ScanEvent: Sendable {
 }
 
 enum ScanWarning: Sendable, Hashable {
-    /// ARP returned no entries while at least one host was alive — usually an L3
-    /// boundary, a stale cache, or no L2 traffic since boot.
+    /// Empty results can reflect routing, cache state, or OS privacy restrictions.
+    case arpFailed(String)
     case arpEmpty
     /// At least one banner fetch (HTTP title / SSH greeting) failed.
     case bannerFetchFailures(count: Int)
 
     var label: String {
         switch self {
+        case .arpFailed(let message): return message
         case .arpEmpty:
             return "MAC addresses unavailable (ARP table empty)"
         case .bannerFetchFailures(let n):
@@ -25,7 +27,11 @@ enum ScanWarning: Sendable, Hashable {
 
     var detail: String {
         switch self {
+        case .arpFailed(let message): return message
         case .arpEmpty:
+            if ProcessInfo.processInfo.operatingSystemVersion.majorVersion >= 27 {
+                return "macOS returned no MAC records. macOS 27 may require the Network Topology Observation capability in a signed, provisioned app. Local network permission alone may not provide MAC access. Routed devices also have no local MAC record."
+            }
             return "No MAC addresses returned from arp(8). Hosts behind a router or first-time scans on a quiet network may take a second pass."
         case .bannerFetchFailures:
             return "HTTP title or SSH greeting could not be read. Banners are best-effort enrichment and don't affect host discovery."
@@ -34,3 +40,10 @@ enum ScanWarning: Sendable, Hashable {
 }
 
 extension Host: @unchecked Sendable {}
+
+enum ScanPhase: String, Sendable {
+    case discovery = "Discovering devices"
+    case enrichment = "Resolving device details"
+    case ports = "Scanning ports"
+    case banners = "Reading service banners"
+}

@@ -5,13 +5,13 @@ enum BannerProbe {
     /// Returns a short banner/title for a host based on what's responding on standard ports.
     /// Priority: HTTPS title (443) > HTTP title (80) > SSH banner (22).
     static func fetch(_ ip: String, openPorts: [Int]) async -> String? {
-        if openPorts.contains(443) {
+        if !Task.isCancelled, openPorts.contains(443) {
             if let t = await fetchHTTPTitle(ip, scheme: "https") { return t }
         }
-        if openPorts.contains(80) {
+        if !Task.isCancelled, openPorts.contains(80) {
             if let t = await fetchHTTPTitle(ip, scheme: "http") { return t }
         }
-        if openPorts.contains(22) {
+        if !Task.isCancelled, openPorts.contains(22) {
             if let b = await fetchSSHBanner(ip) { return b }
         }
         return nil
@@ -22,9 +22,10 @@ enum BannerProbe {
     static func fetchHTTPTitle(
         _ ip: String,
         scheme: String = "http",
+        port: Int? = nil,
         timeout: TimeInterval = 1.5
     ) async -> String? {
-        guard let url = URL(string: "\(scheme)://\(ip)/") else { return nil }
+        guard let url = URL(string: "\(scheme)://\(ip)\(port.map { ":\($0)" } ?? "")/") else { return nil }
         var request = URLRequest(url: url)
         request.timeoutInterval = timeout
         request.setValue("text/html,*/*;q=0.5", forHTTPHeaderField: "Accept")
@@ -73,44 +74,48 @@ enum BannerProbe {
         port: Int = 22,
         timeoutMs: Int = 1000
     ) async -> String? {
-        guard let nwPort = NWEndpoint.Port(rawValue: UInt16(port)) else { return nil }
+        guard (1...65535).contains(port), !Task.isCancelled,
+              let nwPort = NWEndpoint.Port(rawValue: UInt16(port)) else { return nil }
         let connection = NWConnection(
             to: .hostPort(host: NWEndpoint.Host(ip), port: nwPort),
             using: .tcp
         )
         let queue = DispatchQueue.global(qos: .userInitiated)
 
-        return await withCheckedContinuation { (continuation: CheckedContinuation<String?, Never>) in
-            let state = ReadState(connection: connection, continuation: continuation)
+        return await withTaskCancellationHandler {
+            await withCheckedContinuation { (continuation: CheckedContinuation<String?, Never>) in
+                let state = ReadState(connection: connection, continuation: continuation)
 
-            connection.stateUpdateHandler = { newState in
-                switch newState {
-                case .ready:
-                    connection.receive(minimumIncompleteLength: 1, maximumLength: 256) { data, _, _, _ in
-                        guard let data, !data.isEmpty,
-                              let line = String(data: data, encoding: .utf8) else {
-                            state.finish(nil)
-                            return
+                connection.stateUpdateHandler = { newState in
+                    switch newState {
+                    case .ready:
+                        connection.receive(minimumIncompleteLength: 1, maximumLength: 256) { data, _, _, _ in
+                            guard let data, !data.isEmpty,
+                                  let line = String(data: data, encoding: .utf8) else {
+                                state.finish(nil)
+                                return
+                            }
+                            let firstLine = line
+                                .split(whereSeparator: { $0 == "\n" || $0 == "\r" })
+                                .first
+                                .map(String.init)
+                            state.finish(firstLine?.trimmingCharacters(in: .whitespacesAndNewlines))
                         }
-                        let firstLine = line
-                            .split(whereSeparator: { $0 == "\n" || $0 == "\r" })
-                            .first
-                            .map(String.init)
-                        state.finish(firstLine?.trimmingCharacters(in: .whitespacesAndNewlines))
+                    case .failed, .cancelled:
+                        state.finish(nil)
+                    default:
+                        break
                     }
-                case .failed, .cancelled:
-                    state.finish(nil)
-                default:
-                    break
                 }
-            }
 
-            queue.asyncAfter(deadline: .now() + .milliseconds(timeoutMs)) {
-                state.finish(nil)
-            }
+                queue.asyncAfter(deadline: .now() + .milliseconds(timeoutMs)) {
+                    state.finish(nil)
+                }
 
-            connection.start(queue: queue)
-        }
+                if Task.isCancelled { state.finish(nil) }
+                else { connection.start(queue: queue) }
+            }
+        } onCancel: { connection.cancel() }
     }
 
     private final class ReadState: @unchecked Sendable {

@@ -10,6 +10,11 @@ enum ExportService {
         let rttMs: Double?
         let ttl: Int?
         let openPorts: [Int]
+        let netbiosName: String?
+        let workgroup: String?
+        let serviceTitle: String?
+        var vendorStatus: VendorStatus? = nil
+        let status: Host.Status
     }
 
     static func rows(from hosts: [Host], label: (Host) -> String?) -> [Row] {
@@ -22,13 +27,18 @@ enum ExportService {
                 vendor: h.vendor,
                 rttMs: h.rttMs,
                 ttl: h.ttl,
-                openPorts: h.openPorts
+                openPorts: h.openPorts,
+                netbiosName: h.netbiosName,
+                workgroup: h.workgroup,
+                serviceTitle: h.serviceTitle,
+                vendorStatus: h.vendorStatus,
+                status: h.status
             )
         }
     }
 
     static func csv(rows: [Row]) -> String {
-        var out = "IP,Label,Hostname,MAC,Vendor,RTT (ms),TTL,Open Ports\n"
+        var out = "IP,Label,Hostname,MAC,Vendor,RTT (ms),TTL,Open Ports,NetBIOS Name,Workgroup,Service Title,Status\n"
         for r in rows {
             let rtt = r.rttMs.map { String(format: "%.1f", $0) } ?? ""
             let ttl = r.ttl.map(String.init) ?? ""
@@ -41,11 +51,23 @@ enum ExportService {
                 escape(r.vendor),
                 rtt,
                 ttl,
-                escape(ports)
+                escape(ports),
+                escape(r.netbiosName),
+                escape(r.workgroup),
+                escape(r.serviceTitle),
+                escape(statusLabel(r.status))
             ]
             out += cells.joined(separator: ",") + "\n"
         }
         return out
+    }
+
+    private static func statusLabel(_ status: Host.Status) -> String {
+        switch status {
+        case .alive: return "alive"
+        case .dead: return "dead"
+        case .scanning: return "scanning"
+        }
     }
 
     static func json(rows: [Row]) throws -> Data {
@@ -78,21 +100,26 @@ enum ExportService {
         out += String(repeating: "-", count: 60) + "\n"
 
         // Column widths derived from data so output stays aligned without truncating.
+        // Hostname falls back to the NetBIOS computer name when DNS didn't resolve one.
         let ipWidth      = max(15, rows.map { $0.ip.count }.max() ?? 15)
-        let hostWidth    = max(20, rows.map { ($0.hostname ?? "").count }.max() ?? 20)
+        let hostWidth    = max(20, rows.map { ($0.hostname ?? $0.netbiosName ?? "").count }.max() ?? 20)
         let vendorWidth  = max(20, rows.map { ($0.vendor ?? "").count }.max() ?? 20)
+        let statusWidth  = max(8, rows.map { statusLabel($0.status).count }.max() ?? 8)
 
         out += pad("IP", to: ipWidth) + "  "
             + pad("Hostname", to: hostWidth) + "  "
             + pad("Vendor", to: vendorWidth) + "  "
+            + pad("Status", to: statusWidth) + "  "
             + "Ports\n"
         out += String(repeating: "-", count: 60) + "\n"
         for r in rows {
             let ports = r.openPorts.map(String.init).joined(separator: ", ")
+            let title = r.serviceTitle.map { " · \($0)" } ?? ""
             out += pad(r.ip, to: ipWidth) + "  "
-                + pad(r.hostname ?? "—", to: hostWidth) + "  "
+                + pad(r.hostname ?? r.netbiosName ?? "—", to: hostWidth) + "  "
                 + pad(r.vendor ?? "—", to: vendorWidth) + "  "
-                + (ports.isEmpty ? "—" : ports) + "\n"
+                + pad(statusLabel(r.status), to: statusWidth) + "  "
+                + (ports.isEmpty ? "—" : ports) + title + "\n"
         }
         return out
     }

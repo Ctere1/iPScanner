@@ -88,4 +88,32 @@ final class PortScannerTests: XCTestCase {
     func testFormatListEmpty() {
         XCTAssertEqual(PortScanner.formatList([]), "")
     }
+
+    // MARK: - Cancellation
+
+    /// `probe()` must stop enqueueing new ports once its Task is cancelled,
+    /// rather than draining the entire port list one timeout-window at a time.
+    func testProbeStopsQueueingAfterCancellation() async {
+        // TEST-NET-1 (RFC 5737): guaranteed non-routable, so every probe blocks
+        // until its own timeout instead of failing/succeeding immediately —
+        // that makes queueing behavior, not connection speed, the dominant
+        // factor in how long an un-cancelled probe would take.
+        let ip = "192.0.2.1"
+        let manyPorts = Array(1...600)
+
+        let task = Task {
+            await PortScanner.probe(ip, ports: manyPorts, timeoutMs: 200)
+        }
+        task.cancel()
+
+        let start = Date()
+        _ = await task.value
+        let elapsed = Date().timeIntervalSince(start)
+
+        // Uncancelled, 600 ports at 64-wide concurrency and a 200ms timeout
+        // would take roughly 10 batches * 200ms ≈ 2s. A working cancellation
+        // check stops queueing after the in-flight batch and returns within
+        // about one timeout window.
+        XCTAssertLessThan(elapsed, 1.0)
+    }
 }

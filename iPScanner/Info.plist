@@ -58,8 +58,6 @@
 	<string>© 2026 Canberk Kılıçarslan. MIT License.</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>iPScanner discovers devices and services on your local network using ICMP ping, ARP, and Bonjour/mDNS.</string>
-	<key>NSMainStoryboardFile</key>
-	<string></string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
 </dict>
