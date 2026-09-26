@@ -7,6 +7,8 @@ All notable changes to iPScanner are documented here. Format loosely follows
 
 ### Changed
 
+- Present installation in a compact branded disk-image window with a clear drag-to-Applications guide and Retina artwork.
+
 - Align repository metadata and documentation with the published signed release and Sparkle updates.
 - Add contributor and support guides, clarify public feedback, and update issue and pull request templates.
 

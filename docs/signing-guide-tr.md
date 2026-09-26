@@ -110,3 +110,19 @@ kontrol edilmelidir. Yayınlanan Developer ID imzalı 1.3.0 paketine bu kısıtl
 
 macOS 27'de MAC ve üretici bilgisi bu kontrol tamamlanana kadar yayın kabulünden
 geçmiş sayılmaz. Bu kısıt tek başına IP keşfinin başarısız olduğu anlamına gelmez.
+
+## DMG görünümü
+
+Yerel ve CI paketlemesi `scripts/create-dmg.sh` kullanır. DMG araçları
+`scripts/requirements-dmg.txt` ile sabitlenmiş bir Python ortamına kurulur;
+uygulamaya eklenmez. Python 3 ve ilk kurulumda paket indirme erişimi gerekir.
+Arka planı yenilemek için:
+
+```sh
+swift scripts/render-dmg-background.swift assets/dmg/background.png
+swift scripts/render-dmg-background.swift assets/dmg/background@2x.png 2
+```
+
+Pencere düzeni `scripts/dmg-settings.py` içindedir. DMG görünümü değişirse
+imza, notarization, checksum ve Sparkle arşiv imzası yeniden üretilmelidir.
+Yayınlanmış DMG dosyasının üzerine yazmayın; yeni sürümün dağıtım akışını izleyin.

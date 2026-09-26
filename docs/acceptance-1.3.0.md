@@ -97,3 +97,11 @@ clean install from a quarantined public download. The production feed uses HTTPS
 The original app contained 20,957,393 regular file bytes. The published build 3
 contains 11,847,182 bytes (43.5% smaller); its signed DMG is 6,613,102 bytes.
 The raw IEEE source data remains in `data/ieee/`; the app ships the compact index.
+
+## Unreleased installer presentation
+
+The 660 × 452 Finder window (420-point content area), Retina background, drag
+arrow and both draggable icons were visually checked on macOS 27. The mounted
+app retains the published build 3 signature, universal GUI/CLI and notarization
+ticket. This is a local presentation preview, not a replacement release asset.
+The public 1.3.0 DMG, checksum and Sparkle archive signature remain unchanged.
