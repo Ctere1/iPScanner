@@ -3,8 +3,8 @@
 Date: 2026-09-26. Host: Apple Silicon, macOS 27.0, Xcode 27.
 Version 1.3.0 build 3 is published, Developer ID signed and notarized. Remaining
 coverage limitations are listed below. “Passed” applies to
-the method listed, not every possible network or device. Previous chronological
-notes remain in `verification.md`; this table is the current acceptance record.
+the method listed, not every possible network or device. This table is the
+current acceptance record.
 
 Statuses: **Passed / Geçti**, **Failed / Başarısız**, **Environment pending / Ortam bekliyor**.
 A pending manual check is explicitly identified when the limitation is test
@@ -38,7 +38,7 @@ coverage rather than missing hardware. No new public test issue was submitted.
 | Wake-on-LAN packet | Passed | LocalServiceTests verifies all 102 bytes, repeated MAC and rejected invalid/group MAC. Timeout/cancellation states no longer report success. |
 | Wake-on-LAN physical wake | Environment pending | Requires a sleeping WoL-capable device; sent packet is explicitly not wake confirmation. |
 | Feedback delivery and failures | Passed | 6 Worker tests + FeedbackServiceTests/FeedbackDraftTests. Earlier explicitly approved issue #11 verified relay delivery; no new issue created. Draft retained on error and submit disabled while sending. |
-| Feedback layout and help | Passed | Native help/form/preview inspected in previous pass; screenshots 05 and 07. Final simultaneous keyboard/VoiceOver coverage pending below. |
+| Feedback layout and help | Passed | Native help, feedback form and preview inspected during development. Final simultaneous keyboard/VoiceOver coverage pending below. |
 | Legacy GitHub checker success/error/recovery and daily throttle | Passed (legacy only) | UpdateResponseTests inject newer release, HTTP 503, malformed JSON, recovery and recent-check throttling. Earlier live manual check succeeded. These tests do not validate the replacement Sparkle updater; see the follow-up table below. |
 | Clean preferences startup | Passed | Separate quality-preview bundle identity opened with Standard profile, hidden sidebar and empty results; user's app identity/preferences untouched. |
 | Full upgrade from user's existing preferences | Environment pending | Old snapshot and MAC-label compatibility tested; complete settings migration on a copied preferences domain still manual. |
@@ -48,16 +48,17 @@ coverage rather than missing hardware. No new public test issue was submitted.
 | Universal GUI and CLI, bundle collision prevention | Passed | `lipo` shows x86_64 + arm64 in both; bundle guard and negative collision tests pass. Developer ID signatures, secure timestamps and Hardened Runtime verify. |
 | Intel hardware / macOS 14.4 / Sequoia 15 (15.8 if available) | Environment pending | Not available here. Deployment target 14.4 and universal slices are build checks only. |
 | Developer ID signing | Passed | GUI and CLI signatures verified with Apple trust chain, Team ID 9QB26WKA4K, Hardened Runtime and secure timestamps. |
-| Notarization, stapling and Gatekeeper assessment | Passed | Apple accepted GUI/CLI app and DMG. App and DMG stapled; Gatekeeper reports Notarized Developer ID, including the app mounted from DMG. See evidence/sparkle-build3.json for the published package; evidence/notarization-1.3.0.json records the earlier candidate. |
+| Notarization, stapling and Gatekeeper assessment | Passed | Apple accepted GUI/CLI app and DMG. App and DMG stapled; Gatekeeper reports Notarized Developer ID, including the app mounted from DMG. See evidence/sparkle-build3.json for the published package. |
 | Browser-downloaded DMG clean installation | Environment pending | Local Gatekeeper assessment passed; clean browser download/install on the target OS matrix remains pending. |
 
 ## Evidence and commands
 
-The final test/build summaries, package sizes and CLI checks are in `evidence/`.
-Full local Xcode logs are in the task's `work/quality-*.log`; generated artifacts
-are not committed. Reproduce with the commands in `verification.md`, plus:
+The published package record and CLI checks are in `evidence/`. Build outputs
+and local session logs are not committed. To reproduce the automated checks:
 
 ```sh
+xcodegen generate
+xcodebuild test -scheme iPScanner -configuration Debug -destination 'platform=macOS' CODE_SIGN_IDENTITY=- CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM=
 python3 scripts/build-vendor-db.py --check
 (cd feedback-relay && npm test)
 bash scripts/tests/bundle-layout.sh
@@ -90,3 +91,9 @@ separately with the required topology capability and provisioning.
 Previous platform/runtime/accessibility limitations remain open. The local updater
 fixture used HTTP loopback and a test source version; it is not evidence of a
 clean install from a quarantined public download. The production feed uses HTTPS.
+
+## Package size
+
+The original app contained 20,957,393 regular file bytes. The published build 3
+contains 11,847,182 bytes (43.5% smaller); its signed DMG is 6,613,102 bytes.
+The raw IEEE source data remains in `data/ieee/`; the app ships the compact index.

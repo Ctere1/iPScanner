@@ -42,3 +42,17 @@ landing/
 *.keychain-db
 *.mobileprovision
 *.provisionprofile
+
+# Local dependencies, test reports, exports and signing material
+node_modules/
+.venv/
+__pycache__/
+*.py[cod]
+*.xcresult/
+*.dmg
+*.dmg.sha256
+*.pfx
+*.key
+*.pem
+*.ipscan.json
+!docs/media/demo.ipscan.json

@@ -10,6 +10,10 @@ All notable changes to iPScanner are documented here. Format loosely follows
 - Align repository metadata and documentation with the published signed release and Sparkle updates.
 - Add contributor and support guides, clarify public feedback, and update issue and pull request templates.
 
+### Removed
+
+- Remove obsolete artwork, unused demo frames and superseded development notes; keep current screenshots and release validation in one place.
+
 ## [1.3.0] — 2026-09-26
 
 ### Added (New)
