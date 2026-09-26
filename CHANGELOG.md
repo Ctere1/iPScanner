@@ -3,6 +3,13 @@
 All notable changes to iPScanner are documented here. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Changed
+
+- Align repository metadata and documentation with the published signed release and Sparkle updates.
+- Add contributor and support guides, clarify public feedback, and update issue and pull request templates.
+
 ## [1.3.0] — 2026-09-26
 
 ### Added (New)

@@ -1,5 +1,11 @@
 blank_issues_enabled: false
 contact_links:
-  - name: Author website
-    url: https://canberkki.com
-    about: General contact for the maintainer.
+  - name: Download the latest release
+    url: https://github.com/canberkys/iPScanner/releases/latest
+    about: Signed macOS DMG, checksums and release notes.
+  - name: Usage and troubleshooting
+    url: https://github.com/canberkys/iPScanner/blob/main/SUPPORT.md
+    about: Getting started, known limitations and how to report a problem.
+  - name: Project website
+    url: https://canberk.me/projects/ipscanner/
+    about: iPScanner overview on the maintainer's website.

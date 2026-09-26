@@ -11,8 +11,8 @@
 - **Concurrent ping** (32 parallel) using `/sbin/ping`
 - **TCP fallback probe** (445/80/443/22/3389) for hosts that block ICMP — Windows Firewall, etc.
 - **Reverse DNS** with 1-second timeout (race-cancelable)
-- **MAC address** via `arp -an` parsing
-- **Vendor lookup** with the bundled IEEE OUI registry — MA-L (24-bit), MA-M (28-bit), and MA-S (36-bit) for sub-block accuracy
+- **MAC address** via `arp -an` parsing, subject to network reachability and macOS privacy restrictions
+- **Vendor lookup** with the bundled IEEE OUI registry — MA-L (24-bit), MA-M (28-bit), and MA-S (36-bit) for sub-block matching; local/randomized MACs are not assigned a manufacturer
 - **mDNS / Bonjour** service discovery (`_airplay`, `_homekit`, `_smb`, `_ssh`, `_ipp`, `_googlecast`, …)
 - **HTTP / HTTPS title** and **SSH banner** fetch on demand (port-scan banner enrichment)
 
@@ -23,7 +23,7 @@
 
 - **Port scanner** — common-ports preset, web preset, custom ranges (`8000-8100`), bounded concurrency to avoid connection storms
 - **Right-click context menu** per host: HTTP / HTTPS / SSH / VNC / RDP / SMB / AFP / Telnet / Ping in Terminal / Refresh / Wake-on-LAN / Copy IP/Hostname/MAC / Remove from list
-- **Wake-on-LAN** — UDP magic packet, single host or bulk
+- **Wake-on-LAN** — UDP magic packet, single host or bulk; successful sending does not confirm the device woke up
 - **⌘C** copies selected IP(s) from the table
 - **Multi-select** for bulk actions
 
@@ -34,7 +34,7 @@
 
 Select a host and choose Device Details (⌘⌥I). Details open in a sheet in compact windows and a resizable panel in wide windows.
 
-- Header — device-type icon, IP, vendor, classification
+- Header — device-type icon, IP, vendor status and estimated device type
 - Inline label editor with `#tag` syntax (searchable, MAC-anchored, persisted)
 - Full info: hostname, MAC, anchor, open ports (with service names), service title, RTT, TTL, NetBIOS name & workgroup (Standard / Deep)
 - mDNS services list
@@ -63,7 +63,7 @@ Select a host and choose Device Details (⌘⌥I). Details open in a sheet in co
 - **`ipscanner` CLI** — headless binary inside the app bundle for cron / launchd / scripts (see [Command-line interface](../README.md#command-line-interface))
 - **NetBIOS name fetcher** — Standard / Deep profiles pull Windows computer name + workgroup via UDP 137 when DNS is stale
 - **Subnet calculator popover** — Tools menu; `/N` → network, broadcast, host range, count, dotted mask, wildcard
-- **In-app update check** — auto-checks GitHub Releases once per 24 h, also available under `Help → Check for Updates…`
+- **Signed in-app updates** — Sparkle checks the GitHub-hosted feed daily when enabled; manual checks are available in Help and Settings. Review release notes and choose installation in the native update window.
 - **TTL column** — parsed from `/sbin/ping`, optional column with an OS hint tooltip
 - **IP:Port export** and **Text Report export** — flat `ip:port` lines for piping into Nmap / firewalls, and a padded human-readable report for tickets
 
@@ -86,7 +86,17 @@ Select a host and choose Device Details (⌘⌥I). Details open in a sheet in co
 - **Appearance picker** in `View → Appearance` (System / Light / Dark)
 - **Live updates** — alive hosts stream into the table as they're discovered
 - **Status bar** — progress, alive count, filter match, elapsed time, warnings, diff summary
-- Sandbox disabled (required for ICMP / ARP / raw socket access)
+- Distributed outside the App Store with Developer ID signing and notarization
+
+</details>
+
+<details>
+<summary><strong>Help & feedback</strong> — native help, Settings and issue reporting</summary>
+
+- **Help** explains scan profiles, device information, snapshots, shortcuts and troubleshooting.
+- **Settings** controls the default scan profile, appearance and automatic update checks.
+- **Feedback** previews a bug or feature request before submitting it through Cloudflare to a public GitHub issue. A failed submission retains the draft.
+- **Signed updates** and the refreshed radar icon ship with 1.3.0; [update distribution details](automatic-updates.md).
 
 </details>
 

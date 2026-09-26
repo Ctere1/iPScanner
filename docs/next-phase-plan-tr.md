@@ -1,39 +1,26 @@
-> 26 Eylül 2026 güncellemesi: Radar ikonu seçildi ve uygulamaya eklendi.
-> vLens ile aynı Sparkle yaklaşımı uygulanıyor; güncel akış ve yayın adımları
-> [automatic-updates.md](automatic-updates.md) belgesinde. Aşağıdaki metin önceki planı kaydeder.
+# Yayın sonrası işler
 
-# Sonraki aşama: kimlik, güncelleme ve yayın
+[1.3.0](https://github.com/canberkys/iPScanner/releases/tag/v1.3.0) 26 Eylül 2026'da
+yayınlandı. Yeni radar ikonu, Sparkle güncellemeleri, Developer ID imzası,
+notarization, DMG ve checksum tamamlandı. #10'daki paketleme hatası giderildi ve
+issue kapatıldı. Üçüncü taraf bağımlılığı eklememe kararı Sparkle için değiştirildi;
+CLI'ye Sparkle bağımlılığı eklenmedi.
 
-Logo ve otomatik kurulum henüz uygulanmadı. Developer ID ve notarization tamamlandı; yayın öncesi açık testler sürüyor. Önce `acceptance-1.3.0.md` içindeki açık kabul kontrolleri
-kapatılmalı; yerel adayın yayın sürümü olduğu varsayılmamalı.
+## Doğrulama öncelikleri
 
-## 1. Logo
+- macOS 27 MAC erişimi için Network Topology Observation capability ve GUI/CLI
+  provisioning gereksinimini doğrula. Terminal üzerinden erişim kısıtını aşma.
+- Intel, macOS 14.4 ve Sequoia üzerinde indirilen DMG'den temiz açılışı dene.
+- 800 / 960 / 1280 genişliklerde açık/koyu tema, klavye ve VoiceOver matrisini tamamla.
+- Canlı Bonjour kaydı kaybolması, ağ değişimi ve fiziksel Wake-on-LAN kontrollerini tamamla.
+- Sparkle indirme iptali, kesilen kurulum ve herkese açık eski→yeni sürüm geçişini doğrula.
+- GitHub Actions imzalı dağıtımı için release ortamındaki güvenli anahtar kurulumunu doğrula.
 
-- Kompakt ağ keşfi aracı kimliğine uygun 2–3 yön hazırla ve kullanıcıyla seç.
-- macOS ikon maskesi, küçük boyutta okunurluk, açık/koyu Dock görünümü kontrol et.
-- AppIcon setini, README ekranlarını ve GitHub görsellerini birlikte güncelle.
+Her sonucun kanıtını [kabul tablosuna](acceptance-1.3.0.md) ekle. Henüz denenmemiş
+senaryoları geçmiş sayma. Gelecek yayınlar [güncelleme sırasını](automatic-updates.md)
+izlemeli: önce imzalı dosya, ardından doğrulama ve en son appcast.
 
-## 2. Otomatik güncelleme kurulumu
+## Kapsam dışında kalan fikirler
 
-- Mevcut GitHub kontrolü ve kullanıcı kontrollü indirme korunur.
-- İmzalı güncelleme, atomik değiştirme, geri alma ve başarısız indirme davranışını tasarla.
-- Sparkle gibi yerleşik bir çözüm ile bağımlılıksız yaklaşımın bakım/güvenlik yükünü
-  karşılaştır. Üçüncü taraf çalışma zamanı kuralı değiştirilmeden Sparkle eklenmez.
-- İmzalanmamış uygulamaya otomatik kurulum ekleme. Sürüm/kanal seçimi, açık rıza,
-  uygulama kullanımdayken kurulum ve standart kullanıcı hesabı ayrı kabul ölçütleri olsun.
-
-## 3. Developer ID ve macOS 27 MAC erişimi
-
-- Kullanıcı Apple hesabını Xcode'a ekler; sertifika/özel anahtar Keychain'de kalır.
-- Network Topology Observation capability ve provisioning profile gereksinimini
-  GUI ve yardımcı CLI için doğrula. Kısıtlı entitlement ad-hoc pakete eklenmez.
-- Hardened Runtime, içten dışa imza, notarization ve stapling doğrulanır.
-- macOS 14.4, Sequoia ve Intel kontrolü; indirilen quarantined DMG'den temiz açılış.
-
-## 4. Yayın
-
-- DMG ve SHA-256 üret; paketteki GUI/CLI mimarilerini, veri indeksini ve imzayı doğrula.
-- Tamamlanan kabul tablosu üzerinden kullanıcıya inceleme paketi sun.
-- Onaylanan sürümde Unreleased başlığını tarihli 1.3.0'a çevir; changelog'dan GitHub
-  Release metni oluştur, bilinen sınırlamaları ekle.
-- GitHub yayını ve #10 yanıtını hazır paket/metin üzerinden ayrı adımda yap.
+Cihaz geçmişi, IPv6 ve menü çubuğu modu henüz uygulanmadı; bunlar için yayın tarihi
+belirlenmedi. Yeni talepler GitHub issue'larında değerlendirilir.

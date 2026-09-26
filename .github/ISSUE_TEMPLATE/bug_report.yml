@@ -12,8 +12,8 @@ body:
     id: version
     attributes:
       label: iPScanner version
-      description: From the About panel (Apple menu → About iPScanner) or the `.dmg` filename.
-      placeholder: "1.1.0"
+      description: From the About panel (iPScanner menu → About iPScanner) or the `.dmg` filename.
+      placeholder: "1.3.0"
     validations:
       required: true
 
@@ -41,7 +41,7 @@ body:
     id: what-happened
     attributes:
       label: What happened?
-      description: Describe the unexpected behavior. Include the scan range or action that triggered it if relevant.
+      description: Describe the unexpected behavior. Include the action and target format that triggered it. Use example addresses instead of private network details.
       placeholder: |
         I scanned 10.0.0.0/24 with the Standard profile. After ~2 minutes the table froze and the inspector stopped updating.
     validations:
@@ -71,7 +71,7 @@ body:
     attributes:
       label: Crash log / Console output (optional)
       description: |
-        If the app crashed, paste the relevant section from `Console.app` or the crash report from `~/Library/Logs/DiagnosticReports/`.
+        If the app crashed, paste the relevant section from `Console.app` or the crash report from `~/Library/Logs/DiagnosticReports/`. Remove usernames, private addresses, tokens and other sensitive information before posting; this issue is public.
       render: shell
     validations:
       required: false

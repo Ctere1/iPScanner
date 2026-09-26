@@ -1,5 +1,17 @@
-> Current acceptance status: [acceptance-1.3.0.md](acceptance-1.3.0.md).
-> Notes below are chronological and may describe earlier builds.
+# Verification history
+
+**Current release:** [1.3.0](https://github.com/canberkys/iPScanner/releases/tag/v1.3.0),
+published 2026-09-26. Developer ID signing, notarization, stapling and public DMG
+checksum verification are complete. Issue #10 is closed. Current results and open
+platform checks are in the [acceptance record](acceptance-1.3.0.md); final package
+evidence is in [sparkle-build3.json](evidence/sparkle-build3.json).
+
+The notes below are an archive of earlier development runs. Statements about
+pending credentials, unpublished packages or earlier test counts apply only to
+those runs; they do not describe the published release.
+
+<details>
+<summary>Earlier development verification notes</summary>
 
 # 1.3.0 verification status
 
@@ -114,3 +126,5 @@ screen. Release compilation and bundle layout/signature checks passed. The bug
 form and preview sheet were inspected in a separate local app identity, preserving
 the user's running scan session. No live feedback was submitted in this UI pass.
 The refreshed app is in outputs/feedback-ui-test/iPScanner.app.
+
+</details>

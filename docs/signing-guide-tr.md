@@ -67,12 +67,16 @@ export NOTARY_PROFILE='ipscanner-notary'
 
 Bu işlem testleri çalıştırır; GUI ve CLI'ı ayrı derler; içten dışa imzalar;
 uygulamayı Apple'a gönderir, onay biletini ekler; DMG'yi oluşturup imzalar,
-notarize eder ve tekrar doğrular. Başarısız imza veya Apple onayında durur.
+notarize eder ve tekrar doğrular. Sparkle yardımcılarını da içten dışa imzalar;
+son DMG için Ed25519 imzası ve güncelleme kaydı üretir. Başarısız imza veya Apple onayında durur.
 Aynı sürümün önceki build klasörü varsa üzerine yazmaz; onu arşivleyip temiz
 bir çalışma dizininden yeniden başlat.
 
 Çıktılar: `build/release-1.3.0/iPScanner-v1.3.0.dmg` ve yanındaki `.sha256` dosyası.
-Bu script GitHub'a yayın yapmaz.
+Bu script GitHub'a yayın yapmaz. Yerel Sparkle özel anahtarı Keychain içindeki
+`ipscanner` hesabında bulunmalıdır. Sonraki sürümde `project.yml` içindeki
+`CURRENT_PROJECT_VERSION` değerini artır. Dosyalar yayınlandıktan ve indirilebilirliği
+doğrulandıktan sonra üretilen appcast ana dala alınır; [ayrıntılı sıra](automatic-updates.md).
 
 ## 5. Paylaşmadan önce
 
@@ -86,7 +90,7 @@ Bu script GitHub'a yayın yapmaz.
 
 GitHub Actions kullanılırsa `release` environment altında şu secrets gerekir:
 `DEVELOPER_ID_P12_BASE64`, `DEVELOPER_ID_P12_PASSWORD`, `DEVELOPER_ID_IDENTITY`,
-`NOTARY_API_KEY_P8_BASE64`, `NOTARY_KEY_ID`, `NOTARY_ISSUER_ID`.
+`NOTARY_API_KEY_P8_BASE64`, `NOTARY_KEY_ID`, `NOTARY_ISSUER_ID`, `SPARKLE_PRIVATE_KEY`.
 Yerel imzalama için bunları GitHub'a eklemek gerekmez. Workflow yalnızca taslak
 release oluşturur; yayın ayrı bir adımdır.
 
@@ -99,7 +103,7 @@ başarı koduyla boş çıktı verdi. Apple'ın Network Topology Observation yet
 profile koşulu imzalama aşamasında değerlendirilmelidir. Yetkiyi ad-hoc uygulamaya
 eklemek yeterli değildir. GUI ve paket içindeki CLI ayrı ayrı gerçek MAC erişimiyle
 doğrulanmalı; CLI için Apple'ın açıkladığı profile/app-like wrapper gereksinimi
-kontrol edilmelidir. Bu aşamada mevcut ad-hoc pakete bu kısıtlı yetki eklenmedi.
+kontrol edilmelidir. Yayınlanan Developer ID imzalı 1.3.0 paketine bu kısıtlı yetki henüz eklenmedi.
 
 - https://developer.apple.com/forums/thread/841958
 - https://developer.apple.com/forums/thread/822025?page=2

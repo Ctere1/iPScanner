@@ -14,14 +14,14 @@ in Sparkle's native window, which also shows release notes.
 - Ed25519 update signatures use the **ipscanner** Keychain account. The private key
   is never embedded or committed. `SUPublicEDKey` is the public verification key.
 - `SUVerifyUpdateBeforeExtraction` requires signature verification before unpacking.
-- Build numbers must increase; the current Sparkle candidate uses build **3**.
+- Build numbers must increase; the published 1.3.0 release uses build **3**.
 - Debug disables Hardened Runtime for ad-hoc local builds; Release keeps it enabled.
 
 ## Release order
 
 1. Run `scripts/build-dmg.sh VERSION`. It tests, signs, notarizes, staples and
    verifies the DMG, then uses Sparkle's `generate_appcast` with embedded notes.
-   Every step must succeed. A signed feed is produced under `update-feed/`.
+   Every step must succeed. An appcast containing the archive’s Ed25519 signature is produced under `update-feed/`.
 2. Test installation from an older build, plus cancellation and invalid-signature
    rejection, before claiming the update path is validated.
 3. Publish the exact DMG and checksum to the matching GitHub Release.

@@ -1,7 +1,8 @@
 # iPScanner 1.3.0 acceptance record
 
 Date: 2026-09-26. Host: Apple Silicon, macOS 27.0, Xcode 27.
-This is a Developer ID signed local development candidate; notarization is complete; remaining product acceptance gates are listed below. “Passed” applies to
+Version 1.3.0 build 3 is published, Developer ID signed and notarized. Remaining
+coverage limitations are listed below. “Passed” applies to
 the method listed, not every possible network or device. Previous chronological
 notes remain in `verification.md`; this table is the current acceptance record.
 
@@ -38,7 +39,7 @@ coverage rather than missing hardware. No new public test issue was submitted.
 | Wake-on-LAN physical wake | Environment pending | Requires a sleeping WoL-capable device; sent packet is explicitly not wake confirmation. |
 | Feedback delivery and failures | Passed | 6 Worker tests + FeedbackServiceTests/FeedbackDraftTests. Earlier explicitly approved issue #11 verified relay delivery; no new issue created. Draft retained on error and submit disabled while sending. |
 | Feedback layout and help | Passed | Native help/form/preview inspected in previous pass; screenshots 05 and 07. Final simultaneous keyboard/VoiceOver coverage pending below. |
-| Update success/error/recovery and daily throttle | Passed | UpdateResponseTests inject newer release, HTTP 503, malformed JSON, recovery and recent-check throttling. Earlier live manual check succeeded. |
+| Legacy GitHub checker success/error/recovery and daily throttle | Passed (legacy only) | UpdateResponseTests inject newer release, HTTP 503, malformed JSON, recovery and recent-check throttling. Earlier live manual check succeeded. These tests do not validate the replacement Sparkle updater; see the follow-up table below. |
 | Clean preferences startup | Passed | Separate quality-preview bundle identity opened with Standard profile, hidden sidebar and empty results; user's app identity/preferences untouched. |
 | Full upgrade from user's existing preferences | Environment pending | Old snapshot and MAC-label compatibility tested; complete settings migration on a copied preferences domain still manual. |
 | Light/dark visual layout | Passed | Fresh light/dark results, tag search, detail sheet, wide inspector and export menu captured with fictional data in docs/media. Dark inspector and missing-MAC warning inspected earlier. |
@@ -47,7 +48,7 @@ coverage rather than missing hardware. No new public test issue was submitted.
 | Universal GUI and CLI, bundle collision prevention | Passed | `lipo` shows x86_64 + arm64 in both; bundle guard and negative collision tests pass. Developer ID signatures, secure timestamps and Hardened Runtime verify. |
 | Intel hardware / macOS 14.4 / Sequoia 15 (15.8 if available) | Environment pending | Not available here. Deployment target 14.4 and universal slices are build checks only. |
 | Developer ID signing | Passed | GUI and CLI signatures verified with Apple trust chain, Team ID 9QB26WKA4K, Hardened Runtime and secure timestamps. |
-| Notarization, stapling and Gatekeeper assessment | Passed | Apple accepted GUI/CLI app and DMG. App and DMG stapled; Gatekeeper reports Notarized Developer ID, including the app mounted from DMG. See evidence/notarization-1.3.0.json. |
+| Notarization, stapling and Gatekeeper assessment | Passed | Apple accepted GUI/CLI app and DMG. App and DMG stapled; Gatekeeper reports Notarized Developer ID, including the app mounted from DMG. See evidence/sparkle-build3.json for the published package; evidence/notarization-1.3.0.json records the earlier candidate. |
 | Browser-downloaded DMG clean installation | Environment pending | Local Gatekeeper assessment passed; clean browser download/install on the target OS matrix remains pending. |
 
 ## Evidence and commands
@@ -68,7 +69,7 @@ Apple DTS describes the Network Topology Observation capability and provisioning
 profile requirement: https://developer.apple.com/forums/thread/841958 . The ARP
 empty-output report is discussed at https://developer.apple.com/forums/thread/822025?page=2 .
 Do not bypass OS privacy restrictions with a Terminal proxy. Validate GUI and CLI
-separately in the later signing phase.
+separately with the required topology capability and provisioning.
 
 
 ## Icon and Sparkle follow-up — 2026-09-26
@@ -77,7 +78,7 @@ separately in the later signing phase.
 |---|---|---|
 | App regression suite with Sparkle | Passed | 190 XCTest, no failures; universal Debug build |
 | Selected radar icon | Passed | 16–1024 pixel assets generated; asset compiler completed |
-| Search demo | Passed | Real sample UI captures; 5.5 s, 940×410 GIF; frames visually inspected |
+| Product tour | Passed | Three actual sample-data UI captures: results, details and export; 11 s, 940×640 GIF. Static full interface leads the README. |
 | Update notes and manual check | Passed | Native Sparkle UI displayed version, notes and install action |
 | Invalid Ed25519 update signature | Passed | Altered feed signature rejected; app stayed on build 1 |
 | Full local update | Passed | Signed test copy build 1 → notarized build 2; relaunch and GUI SHA-256 match |

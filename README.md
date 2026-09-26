@@ -123,7 +123,7 @@ The old `Contents/MacOS/ipscanner` path has moved to avoid the filename collisio
 ## Build and test
 
 Requirements: macOS, Xcode with an SDK supporting the macOS 14.4 deployment target,
-and [XcodeGen](https://github.com/yonki/xcodegen).
+and [XcodeGen](https://github.com/yonaskolb/XcodeGen).
 
 ```bash
 brew install xcodegen
@@ -158,13 +158,15 @@ a universal build is not proof of testing on Intel hardware or every supported O
 ## What's next
 
 Continue the remaining compatibility and accessibility checks. History, IPv6 and menu-bar mode
-are outside the current update. [Next-phase plan](docs/next-phase-plan-tr.md).
+are outside the current update. [Follow-up work](docs/next-phase-plan-tr.md).
 
 ## Project
 
 [Changelog](CHANGELOG.md) · [1.3.0 notes](docs/release-notes-1.3.0.md) ·
 [Bug reports and feature requests](https://github.com/canberkys/iPScanner/issues/new/choose) ·
-[Website](https://canberk.me/ipscanner/)
+[Website](https://canberk.me/projects/ipscanner/)
+
+[Contributing](CONTRIBUTING.md) · [Support](SUPPORT.md) · [Update distribution](docs/automatic-updates.md)
 
 MIT © Canberk Kılıçarslan — [LICENSE](LICENSE).
 Vendor registry data: [IEEE Standards Association](https://standards-oui.ieee.org/).
