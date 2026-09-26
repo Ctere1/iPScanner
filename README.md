@@ -18,7 +18,7 @@
 
 **iPScanner is a compact, native macOS tool for everyday IPv4 network discovery.**
 Find responding devices, inspect names and services, add searchable labels, and
-save or export what you find. Built with SwiftUI and no third-party runtime dependencies.
+save or export what you find. Built with SwiftUI; signed in-app updates are powered by Sparkle.
 
 > **1.3.0 development preview:** these visuals show the current development version.
 > The local app and DMG are Developer ID signed and notarized; a GitHub Release has
@@ -29,10 +29,10 @@ save or export what you find. Built with SwiftUI and no third-party runtime depe
 
 ## Demo
 
-![Short iPScanner walkthrough: results, tag search, device details, export and dark appearance](docs/media/demo.gif)
+![iPScanner tag search: all devices to matching lab devices](docs/media/demo.gif)
 
-*An 18-second walkthrough assembled from real app screens using a fictional saved
-snapshot. It is not a live scan or a scan-speed benchmark.*
+*A 5.5-second tag-search loop using a fictional saved snapshot. The view is
+cropped to keep labels readable; it does not show a live scan.*
 [Static overview](docs/media/demo-poster.jpg) · [Screenshot gallery and demo instructions](docs/media/README.md)
 
 ## Everyday tasks, one window
@@ -79,9 +79,10 @@ Opening details for the first row runs the ping monitor against localhost only.
 
 ### Updates and feedback
 
-- **Automatic update checks:** optional, at launch, at most once every 24 hours.
+- **Automatic update checks:** optional daily checks through Sparkle.
   Manual checks are available in Help and Settings.
-- **Installation is manual:** update links open the GitHub release page.
+- **In-app installation:** review release notes, download and install a signed update.
+  The public update feed will become active with the first published 1.3.0 release.
   Automatic download and installation are not included yet.
 - **Feedback:** review your draft in the app before sending it through Cloudflare
   to a **public GitHub issue**. A GitHub account is not required to submit in-app.
@@ -151,8 +152,8 @@ a universal build is not proof of testing on Intel hardware or every supported O
 
 ## What's next
 
-Finish the remaining compatibility and accessibility checks, then develop the new
-visual identity and automatic update installation. History, IPv6 and menu-bar mode
+Finish the remaining compatibility and accessibility checks, then publish the
+refreshed icon and Sparkle update installer. History, IPv6 and menu-bar mode
 are outside the current update. [Next-phase plan](docs/next-phase-plan-tr.md).
 
 ## Project

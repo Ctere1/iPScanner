@@ -3,6 +3,11 @@ set -euo pipefail
 APP="${1:?Usage: verify-app.sh APP VERSION}"
 VERSION="${2:?Expected version required}"
 GUI="$APP/Contents/MacOS/iPScanner"
+test -f "$APP/Contents/Resources/Sparkle-LICENSE.txt"
+test -d "$APP/Contents/Frameworks/Sparkle.framework"
+[[ "$(/usr/libexec/PlistBuddy -c 'Print :SUFeedURL' "$APP/Contents/Info.plist")" == https://raw.githubusercontent.com/canberkys/iPScanner/main/appcast.xml ]]
+[[ "$(/usr/libexec/PlistBuddy -c 'Print :SUPublicEDKey' "$APP/Contents/Info.plist")" == lvTv3xWikHyIAqm62expMC6zDTJWOnms6Lm1+JTg5tk= ]]
+[[ "$(/usr/libexec/PlistBuddy -c 'Print :SUVerifyUpdateBeforeExtraction' "$APP/Contents/Info.plist")" == true ]]
 CLI="$APP/Contents/Helpers/ipscanner"
 "$(dirname "$0")/check-bundle-layout.sh" "$APP"
 [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$APP/Contents/Info.plist")" == iPScanner ]]

@@ -35,6 +35,7 @@ enum AppearanceMode: String, CaseIterable, Identifiable {
 
 @main
 struct iPScannerApp: App {
+    @StateObject private var updater = AppUpdater()
     @Environment(\.openWindow) private var openWindow
     @AppStorage("iPScanner.appearance") private var appearanceRaw: String = AppearanceMode.system.rawValue
 
@@ -66,8 +67,8 @@ struct iPScannerApp: App {
                 Button("Report an Issue…") { openWindow(id: "feedback") }
                 Divider()
                 Button("Check for Updates…") {
-                    NotificationCenter.default.post(name: .iPScannerCommandCheckForUpdates, object: nil)
-                }
+                    updater.checkForUpdates()
+                }.disabled(!updater.canCheckForUpdates)
                 Divider()
                 Menu("Advanced") {
                 Button("Open Vendor Database in Finder") {
@@ -126,7 +127,7 @@ struct iPScannerApp: App {
                 .pickerStyle(.inline)
             }
         }
-        Settings { ScannerSettingsView() }
+        Settings { ScannerSettingsView(updater: updater) }
         Window("iPScanner Help", id: "help") { ProductHelpView() }
         Window("Feedback", id: "feedback") { FeedbackView() }
             .windowResizability(.contentSize)
@@ -155,7 +156,7 @@ private func showCustomAboutPanel() {
         attributes: linkAttrs
     ))
     credits.append(NSAttributedString(
-        string: "\n\nVendor data from IEEE OUI registry.\nBuilt with SwiftUI · Zero third-party dependencies.",
+        string: "\n\nVendor data from IEEE OUI registry.\nBuilt with SwiftUI · Updates powered by Sparkle.",
         attributes: bodyAttrs
     ))
 

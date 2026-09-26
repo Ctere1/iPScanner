@@ -69,3 +69,23 @@ profile requirement: https://developer.apple.com/forums/thread/841958 . The ARP
 empty-output report is discussed at https://developer.apple.com/forums/thread/822025?page=2 .
 Do not bypass OS privacy restrictions with a Terminal proxy. Validate GUI and CLI
 separately in the later signing phase.
+
+
+## Icon and Sparkle follow-up — 2026-09-26
+
+| Check | Status | Method / evidence |
+|---|---|---|
+| App regression suite with Sparkle | Passed | 190 XCTest, no failures; universal Debug build |
+| Selected radar icon | Passed | 16–1024 pixel assets generated; asset compiler completed |
+| Search demo | Passed | Real sample UI captures; 5.5 s, 940×410 GIF; frames visually inspected |
+| Update notes and manual check | Passed | Native Sparkle UI displayed version, notes and install action |
+| Invalid Ed25519 update signature | Passed | Altered feed signature rejected; app stayed on build 1 |
+| Full local update | Passed | Signed test copy build 1 → notarized build 2; relaunch and GUI SHA-256 match |
+| Build 3 signing / app + DMG notarization | Passed | Both Accepted; staples, Gatekeeper, universal slices, DMG round trip checked |
+| Public GitHub update delivery | Environment pending | Empty feed until exact release assets are public |
+| In-progress download cancellation / interrupted installation | Environment pending | Not exercised in this follow-up |
+| CI signing key | Environment pending | Workflow supports SPARKLE_PRIVATE_KEY; secret provisioning unverified |
+
+Previous platform/runtime/accessibility limitations remain open. The local updater
+fixture used HTTP loopback and a test source version; it is not evidence of a
+clean install from a quarantined public download. The production feed uses HTTPS.

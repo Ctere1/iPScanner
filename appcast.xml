@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle">
+  <channel>
+    <title>iPScanner Updates</title>
+    <link>https://github.com/canberkys/iPScanner</link>
+    <description>Stable, signed iPScanner updates. The first update is added after release assets are published.</description>
+    <language>en</language>
+  </channel>
+</rss>

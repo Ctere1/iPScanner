@@ -1,0 +1,25 @@
+{
+  "version": "1.3.0",
+  "build": 3,
+  "sparkle": "2.9.6",
+  "appNotary": {
+    "message": "Processing complete",
+    "status": "Accepted",
+    "id": "3b401d03-f2f2-4012-9492-a9f5a2c1aaa2"
+  },
+  "dmgNotary": {
+    "message": "Processing complete",
+    "id": "9c1296ff-52b2-40d0-80ab-63addf392a78",
+    "status": "Accepted"
+  },
+  "dmgBytes": 6613102,
+  "dmgSHA256": "01efbf51b71c6c9161d1bc08baf10338f3a5d4d0bec6cdea1e654c690d20e4df",
+  "appRegularFileBytes": 11847182,
+  "localUpdateTest": {
+    "fromBuild": 1,
+    "toBuild": 2,
+    "installedGUI_SHA256": "52055afddf05beb44972c067915920a0d8a2746ed2bfc2f905c44bec32a2a904",
+    "invalidSignatureRejected": true
+  },
+  "publicReleasePublished": false
+}

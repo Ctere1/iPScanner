@@ -11,7 +11,7 @@ NOTARY_ARGS=(--keychain-profile "$NOTARY_PROFILE")
 if [[ -n "${NOTARY_KEYCHAIN:-}" ]]; then NOTARY_ARGS+=(--keychain "$NOTARY_KEYCHAIN"); fi
 [[ "$SIGNING_IDENTITY" == 'Developer ID Application:'* || "$SIGNING_IDENTITY" =~ ^[[:xdigit:]]{40}$ ]] || { echo 'A Developer ID Application identity is required' >&2; exit 1; }
 command -v xcodegen >/dev/null
-BUILD_DIR="$PWD/build/release-$VERSION"
+BUILD_DIR="${RELEASE_BUILD_DIR:-$PWD/build/release-$VERSION}"
 mkdir -p "$BUILD_DIR"
 APP="$BUILD_DIR/iPScanner.xcarchive/Products/Applications/iPScanner.app"
 DMG="$BUILD_DIR/iPScanner-v$VERSION.dmg"
@@ -21,7 +21,7 @@ python3 scripts/build-vendor-db.py --check
 xcodegen generate
 COMMON=(-configuration Release -destination 'generic/platform=macOS' 'ARCHS=arm64 x86_64' ONLY_ACTIVE_ARCH=NO CODE_SIGN_IDENTITY=- CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM= ENABLE_HARDENED_RUNTIME=YES "MARKETING_VERSION=$VERSION")
 xcodebuild test -scheme iPScanner -configuration Debug -destination 'platform=macOS' -derivedDataPath "$BUILD_DIR/tests" CODE_SIGN_IDENTITY=- CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM=
-xcodebuild -scheme iPScanner "${COMMON[@]}" -archivePath "$BUILD_DIR/iPScanner.xcarchive" archive
+xcodebuild -scheme iPScanner "${COMMON[@]}" -derivedDataPath "$BUILD_DIR/app-products" -archivePath "$BUILD_DIR/iPScanner.xcarchive" archive
 # Separate products directory prevents the case-insensitive product-name collision too.
 xcodebuild -scheme ipscanner "${COMMON[@]}" "SYMROOT=$BUILD_DIR/cli-products" build
 CLI="$BUILD_DIR/cli-products/Release/ipscanner-cli"
@@ -30,6 +30,7 @@ mkdir -p "$APP/Contents/Helpers"
 cp "$CLI" "$APP/Contents/Helpers/ipscanner"
 # Sign from the inside out. Never place ipscanner alongside iPScanner in MacOS/.
 codesign --force --options runtime --timestamp --sign "$SIGNING_IDENTITY" "$APP/Contents/Helpers/ipscanner"
+./scripts/sign-sparkle.sh "$APP"
 codesign --force --options runtime --timestamp --sign "$SIGNING_IDENTITY" "$APP"
 ./scripts/verify-app.sh "$APP" "$VERSION"
 ditto -c -k --keepParent "$APP" "$BUILD_DIR/iPScanner-notary.zip"
@@ -71,4 +72,6 @@ xcrun stapler validate "$MOUNT/iPScanner.app"
 hdiutil detach "$MOUNT"
 trap - EXIT
 (cd "$BUILD_DIR" && shasum -a 256 "$(basename "$DMG")" > "$(basename "$DMG").sha256")
+export SPARKLE_BIN="$BUILD_DIR/app-products/SourcePackages/artifacts/sparkle/Sparkle/bin"
+./scripts/generate-update-feed.sh "$DMG" "$VERSION" "$BUILD_DIR/update-feed"
 echo "Verified release: $DMG"

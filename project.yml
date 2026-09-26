@@ -22,9 +22,14 @@ settings:
     ENABLE_HARDENED_RUNTIME: YES
     PRODUCT_BUNDLE_IDENTIFIER: com.canberkkilicarslan.iPScanner
     MARKETING_VERSION: "1.3.0"
-    CURRENT_PROJECT_VERSION: "1"
+    CURRENT_PROJECT_VERSION: "3"
     GENERATE_INFOPLIST_FILE: NO
     ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+
+packages:
+  Sparkle:
+    url: https://github.com/sparkle-project/Sparkle.git
+    exactVersion: 2.9.6
 
 targets:
   iPScanner:
@@ -53,6 +58,11 @@ targets:
         NSHumanReadableCopyright: "© 2026 Canberk Kılıçarslan. MIT License."
         NSAppTransportSecurity:
           NSAllowsArbitraryLoads: true
+        SUFeedURL: https://raw.githubusercontent.com/canberkys/iPScanner/main/appcast.xml
+        SUPublicEDKey: lvTv3xWikHyIAqm62expMC6zDTJWOnms6Lm1+JTg5tk=
+        SUScheduledCheckInterval: 86400
+        SUAutomaticallyUpdate: false
+        SUVerifyUpdateBeforeExtraction: true
         NSPrincipalClass: NSApplication
         NSLocalNetworkUsageDescription: iPScanner discovers devices and services on your local network using ICMP ping, ARP, and Bonjour/mDNS.
         NSBonjourServices:
@@ -74,6 +84,12 @@ targets:
           - _printer._tcp
           - _pdl-datastream._tcp
           - _device-info._tcp
+    dependencies:
+      - package: Sparkle
+    settings:
+      configs:
+        Debug:
+          ENABLE_HARDENED_RUNTIME: NO
     preBuildScripts:
       - name: Validate vendor database
         script: python3 "$SRCROOT/scripts/build-vendor-db.py" --check
@@ -94,6 +110,7 @@ targets:
           - "ScanController.swift"
           - "PingMonitor.swift"
           - "MDNSDiscovery.swift"
+          - "AppUpdater.swift"
     settings:
       base:
         PRODUCT_NAME: ipscanner-cli

@@ -26,9 +26,13 @@ jobs:
           NOTARY_KEY: ${{ secrets.NOTARY_API_KEY_P8_BASE64 }}
           NOTARY_KEY_ID: ${{ secrets.NOTARY_KEY_ID }}
           NOTARY_ISSUER: ${{ secrets.NOTARY_ISSUER_ID }}
+          SPARKLE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
         run: |
           set -euo pipefail
           : "${CERTIFICATE:?}" "${CERTIFICATE_PASSWORD:?}" "${NOTARY_KEY:?}" "${NOTARY_KEY_ID:?}" "${NOTARY_ISSUER:?}"
+          : "${SPARKLE_KEY:?}"
+          umask 077
+          printf '%s' "$SPARKLE_KEY" > "$RUNNER_TEMP/sparkle.key"
           KEYCHAIN="$RUNNER_TEMP/ipscanner-signing.keychain-db"
           KEYCHAIN_PASSWORD="$(openssl rand -hex 24)"
           echo "::add-mask::$KEYCHAIN_PASSWORD"
@@ -46,6 +50,7 @@ jobs:
           INPUT_VERSION: ${{ inputs.version }}
           SIGNING_IDENTITY: ${{ secrets.DEVELOPER_ID_IDENTITY }}
           NOTARY_PROFILE: ipscanner-release
+          SPARKLE_PRIVATE_KEY_FILE: ${{ runner.temp }}/sparkle.key
         run: |
           set -euo pipefail
           VERSION="${INPUT_VERSION:-${GITHUB_REF_NAME#v}}"
@@ -58,6 +63,7 @@ jobs:
           path: |
             build/release-*/*.dmg
             build/release-*/*.sha256
+            build/release-*/update-feed/appcast.xml
           if-no-files-found: error
       - name: Prepare draft release
         if: startsWith(github.ref, 'refs/tags/v')
@@ -72,4 +78,4 @@ jobs:
         if: always()
         run: |
           security delete-keychain "$RUNNER_TEMP/ipscanner-signing.keychain-db" || true
-          rm -f "$RUNNER_TEMP/certificate.p12" "$RUNNER_TEMP/notary.p8"
+          rm -f "$RUNNER_TEMP/certificate.p12" "$RUNNER_TEMP/notary.p8" "$RUNNER_TEMP/sparkle.key"

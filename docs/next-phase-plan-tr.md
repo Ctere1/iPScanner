@@ -1,3 +1,7 @@
+> 26 Eylül 2026 güncellemesi: Radar ikonu seçildi ve uygulamaya eklendi.
+> vLens ile aynı Sparkle yaklaşımı uygulanıyor; güncel akış ve yayın adımları
+> [automatic-updates.md](automatic-updates.md) belgesinde. Aşağıdaki metin önceki planı kaydeder.
+
 # Sonraki aşama: kimlik, güncelleme ve yayın
 
 Logo ve otomatik kurulum henüz uygulanmadı. Developer ID ve notarization tamamlandı; yayın öncesi açık testler sürüyor. Önce `acceptance-1.3.0.md` içindeki açık kabul kontrolleri

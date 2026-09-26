@@ -20,16 +20,17 @@ and date only after the acceptance gates pass.
 - Compact scanning controls, optional sidebar, adaptive device details and clear
   empty-search states. Details explain vendor status and device-type estimates.
 - Native Help and Settings, previewed feedback through Cloudflare to public GitHub
-  issues, and manual/optional daily GitHub update checks.
+  issues, and optional daily Sparkle checks with signed in-app update installation.
+- Refreshed radar app icon and a shorter, focused tag-search demo.
 - Put AFP, Telnet and database access under Advanced. Explain missing connection
   handlers and distinguish Wake-on-LAN packet sending from confirmed device wake.
-- Bundle a compact, build-validated IEEE index. The local universal app decreased
-  from 20.96 MB to 14.46 MB (31%); this is app file size, not a DMG size.
+- Bundle a compact, build-validated IEEE index. The final build 3 universal app is
+  11.85 MB of regular files; its compressed DMG is 6.61 MB.
 
 ## Compatibility
 
 Native SwiftUI, IPv4, macOS deployment target 14.4, Apple Silicon and Intel binary
-slices; no added third-party runtime dependency. Existing snapshot fields, CSV
+slices. Sparkle 2.9.6 is the GUI’s update framework; the CLI remains dependency-free. Existing snapshot fields, CSV
 columns and CLI arguments remain. `vendorStatus` is optional JSON/snapshot metadata.
 
 **CLI location:** `iPScanner.app/Contents/Helpers/ipscanner` replaces the colliding
@@ -50,5 +51,5 @@ port/timeout/cancellation checks and packaged CLI profiles pass. See
 - The current local app and CLI are Developer ID signed with Hardened Runtime
   and secure timestamps. Apple accepted the app and DMG; stapling, image integrity
   and local Gatekeeper assessment passed. Clean downloaded-DMG installation and
-  GitHub Release publication remain pending. Automatic installation
-  of updates is not included.
+  GitHub Release publication remain pending. A local Sparkle installation and invalid-signature rejection passed.
+  Public-feed delivery and clean downloaded-DMG installation remain release gates.

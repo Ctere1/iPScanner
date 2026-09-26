@@ -60,5 +60,15 @@
 	<string>iPScanner discovers devices and services on your local network using ICMP ping, ARP, and Bonjour/mDNS.</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
+	<key>SUAutomaticallyUpdate</key>
+	<false/>
+	<key>SUFeedURL</key>
+	<string>https://raw.githubusercontent.com/canberkys/iPScanner/main/appcast.xml</string>
+	<key>SUPublicEDKey</key>
+	<string>lvTv3xWikHyIAqm62expMC6zDTJWOnms6Lm1+JTg5tk=</string>
+	<key>SUScheduledCheckInterval</key>
+	<integer>86400</integer>
+	<key>SUVerifyUpdateBeforeExtraction</key>
+	<true/>
 </dict>
 </plist>

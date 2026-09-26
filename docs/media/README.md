@@ -9,16 +9,12 @@ come from the documentation range 192.0.2.0/24. Do not start a scan of the fixtu
 
 ## Walkthrough
 
-![Results, tag search, device details, export and appearance](demo.gif)
+![Search a sample device list by tag](demo.gif)
 
-This approximately 18-second animated walkthrough is assembled from five real UI captures;
-it does not represent live discovery or elapsed scan time.
-
-1. **Results:** responding-state sample devices, labels, names and ports.
-2. **Search:** `#lab` narrows the table to two labeled devices.
-3. **Details:** saved data is marked historical; the device type explains its evidence.
-4. **Export:** CSV, JSON, IP:Port and text report options.
-5. **Appearance:** the same results in dark appearance.
+This 5.5-second loop shows the actual search UI: all six sample devices, entering
+`#`, then narrowing the list to the two devices tagged `#lab`. It is cropped to
+search, addresses and labels for readability. The full UI is shown below.
+It does not represent live discovery or elapsed scan time.
 
 [Static tour cover](demo-poster.jpg)
 
@@ -58,6 +54,5 @@ account. Keep network/device details fictional and verify every image before
 committing. Capture via the normal macOS UI; do not redraw application controls.
 
 `scripts/build-demo-media.py` assembles the walkthrough from the JPEG captures.
-It requires Pillow only as a documentation build tool; the app has no added
-runtime dependency. The SVG header is editable text, separate from the existing
-app icon. A new app logo is not part of this media update.
+It requires Pillow only as a documentation build tool. The app uses Sparkle for
+updates. The refreshed radar icon is shared by the app and README.

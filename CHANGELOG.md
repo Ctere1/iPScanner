@@ -6,6 +6,8 @@ All notable changes to iPScanner are documented here. Format loosely follows
 ## [Unreleased — 1.3.0]
 
 ### Added (New)
+
+- Add Sparkle update checks and signed in-app installation, with shared Settings and menu controls. The public feed is activated at release.
 - Run application tests and package validation on pull requests and pushes to main.
 - Explain vendor lookup outcomes and the evidence behind estimated device types.
 - Preserve optional vendor-status metadata in JSON exports and scan snapshots.
@@ -13,10 +15,12 @@ All notable changes to iPScanner are documented here. Format loosely follows
 - Native help topics for first scans, profiles, troubleshooting, snapshots and shortcuts.
 - Feedback drafts for bugs and feature requests, with optional environment details,
   preview, clipboard fallback and direct Cloudflare delivery to public GitHub issues.
-- Settings for scan profile, appearance and automatic update checks; manual update
-  status includes the last check attempt and release download link.
+- Settings for scan profile, appearance and automatic update checks, with manual
+  checks available in Help and Settings.
 
 ### Changed
+
+- Refresh the radar app icon and replace the long slideshow with a focused tag-search demo.
 - Refresh the GitHub overview with a captioned UI walkthrough, current light/dark screenshots and a downloadable sample snapshot.
 - Ship a validated compact IEEE prefix index instead of raw registry address files.
 - Move legacy AFP/Telnet connections and raw vendor database access into Advanced.

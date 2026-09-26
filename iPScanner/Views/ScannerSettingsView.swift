@@ -3,10 +3,7 @@ import SwiftUI
 struct ScannerSettingsView: View {
     @AppStorage("iPScanner.scanProfile") private var profile = ScanProfile.standard.rawValue
     @AppStorage("iPScanner.appearance") private var appearance = AppearanceMode.system.rawValue
-    @AppStorage("iPScanner.update.automatic") private var automatic = true
-    @AppStorage("iPScanner.update.lastCheckAt") private var lastCheck: Double = 0
-    @State private var checker = UpdateChecker()
-    @State private var checked = false
+    @ObservedObject var updater: AppUpdater
 
     var body: some View {
         Form {
@@ -22,25 +19,17 @@ struct ScannerSettingsView: View {
                 }
             }
             Section("Updates") {
-                Toggle("Automatically check for updates", isOn: $automatic)
-                Text("Checks GitHub when the app opens, at most once every 24 hours. Downloads and installation remain under your control.").font(.caption).foregroundStyle(.secondary)
+                Toggle("Automatically check for updates", isOn: Binding(
+                    get: { updater.automaticallyChecks },
+                    set: { updater.setAutomaticChecks($0) }
+                ))
+                Text("Checks the GitHub update feed daily while the app is running. Review release notes, then download and install signed updates from the update window.")
+                    .font(.caption).foregroundStyle(.secondary)
                 LabeledContent("Installed version", value: UpdateChecker.currentVersion())
-                if lastCheck > 0 {
-                    LabeledContent("Last check attempt", value: Date(timeIntervalSince1970: lastCheck).formatted(date: .abbreviated, time: .shortened))
-                }
-                Button(checker.isChecking ? "Checking…" : "Check for Updates") {
-                    Task {
-                        await checker.checkForUpdates()
-                        lastCheck = Date().timeIntervalSince1970
-                        checked = true
-                    }
-                }.disabled(checker.isChecking)
-                if let error = checker.lastError {
-                    Text("Could not check for updates. \(error)").font(.caption).foregroundStyle(.orange)
-                } else if let update = checker.availableUpdate {
-                    Link("View iPScanner \(update.latestVersion) release notes and download", destination: update.releaseURL)
-                } else if checked {
-                    Text("You’re up to date.").foregroundStyle(.secondary)
+                Button("Check for Updates…") { updater.checkForUpdates() }
+                    .disabled(!updater.canCheckForUpdates)
+                if let error = updater.startupError {
+                    Text(error).font(.caption).foregroundStyle(.orange)
                 }
             }
         }.formStyle(.grouped).frame(width: 500, height: 475)
