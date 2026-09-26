@@ -5,7 +5,9 @@
 Debug tests, universal Release GUI and CLI builds succeeded.
 Bundle layout and Developer ID deep/strict signature validation passed.
 GUI + CLI: Hardened Runtime, secure timestamp, Team ID 9QB26WKA4K.
-Notarization pending: no configured ipscanner-notary credentials profile.
+Apple accepted app and DMG; both stapled and Gatekeeper accepted.
+Details: notarization-1.3.0.json
+GitHub CI passed: https://github.com/canberkys/iPScanner/actions/runs/36253615623
 Negative bundle tests reject overwritten GUI and missing CLI.
 git diff --check passed.
 

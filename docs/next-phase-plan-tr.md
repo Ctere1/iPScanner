@@ -1,6 +1,6 @@
 # Sonraki aşama: kimlik, güncelleme ve yayın
 
-Bu plan uygulanmadı. Önce `acceptance-1.3.0.md` içindeki açık kabul kontrolleri
+Logo ve otomatik kurulum henüz uygulanmadı. Developer ID ve notarization tamamlandı; yayın öncesi açık testler sürüyor. Önce `acceptance-1.3.0.md` içindeki açık kabul kontrolleri
 kapatılmalı; yerel adayın yayın sürümü olduğu varsayılmamalı.
 
 ## 1. Logo

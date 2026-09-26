@@ -1,7 +1,7 @@
 # iPScanner 1.3.0 acceptance record
 
 Date: 2026-09-26. Host: Apple Silicon, macOS 27.0, Xcode 27.
-This is a Developer ID signed local development candidate; notarization and release acceptance remain pending. “Passed” applies to
+This is a Developer ID signed local development candidate; notarization is complete; remaining product acceptance gates are listed below. “Passed” applies to
 the method listed, not every possible network or device. Previous chronological
 notes remain in `verification.md`; this table is the current acceptance record.
 
@@ -41,13 +41,14 @@ coverage rather than missing hardware. No new public test issue was submitted.
 | Update success/error/recovery and daily throttle | Passed | UpdateResponseTests inject newer release, HTTP 503, malformed JSON, recovery and recent-check throttling. Earlier live manual check succeeded. |
 | Clean preferences startup | Passed | Separate quality-preview bundle identity opened with Standard profile, hidden sidebar and empty results; user's app identity/preferences untouched. |
 | Full upgrade from user's existing preferences | Environment pending | Old snapshot and MAC-label compatibility tested; complete settings migration on a copied preferences domain still manual. |
-| Light/dark visual layout | Passed | Earlier light compact/wide screenshots; new 900-point dark results screenshot 08. Dark inspector and missing-MAC warning inspected. |
+| Light/dark visual layout | Passed | Fresh light/dark results, tag search, detail sheet, wide inspector and export menu captured with fictional data in docs/media. Dark inspector and missing-MAC warning inspected earlier. |
 | Exact 800 / 960 / 1280 widths in both themes | Environment pending | Earlier 800 light pass exists. Current automation could not reliably resize window edges/select theme; exact full matrix not passed. |
 | Keyboard and VoiceOver | Environment pending | Cmd-O, Cmd-R, Cmd-Option-I, Cmd-comma and label Enter inspected. Full keyboard traversal and actual VoiceOver narration not completed. |
 | Universal GUI and CLI, bundle collision prevention | Passed | `lipo` shows x86_64 + arm64 in both; bundle guard and negative collision tests pass. Developer ID signatures, secure timestamps and Hardened Runtime verify. |
 | Intel hardware / macOS 14.4 / Sequoia 15 (15.8 if available) | Environment pending | Not available here. Deployment target 14.4 and universal slices are build checks only. |
 | Developer ID signing | Passed | GUI and CLI signatures verified with Apple trust chain, Team ID 9QB26WKA4K, Hardened Runtime and secure timestamps. |
-| Notarization, Gatekeeper downloaded DMG | Environment pending | No notarytool credentials profile available. No notarized release or quarantine install acceptance claimed. |
+| Notarization, stapling and Gatekeeper assessment | Passed | Apple accepted GUI/CLI app and DMG. App and DMG stapled; Gatekeeper reports Notarized Developer ID, including the app mounted from DMG. See evidence/notarization-1.3.0.json. |
+| Browser-downloaded DMG clean installation | Environment pending | Local Gatekeeper assessment passed; clean browser download/install on the target OS matrix remains pending. |
 
 ## Evidence and commands
 

@@ -48,6 +48,7 @@ port/timeout/cancellation checks and packaged CLI profiles pass. See
 - Registry source retrieval dates were not recorded in the original project;
   they are explicitly unknown. Source hashes are pinned in the generated index.
 - The current local app and CLI are Developer ID signed with Hardened Runtime
-  and secure timestamps. Notarization, downloaded-DMG Gatekeeper tests and
+  and secure timestamps. Apple accepted the app and DMG; stapling, image integrity
+  and local Gatekeeper assessment passed. Clean downloaded-DMG installation and
   GitHub Release publication remain pending. Automatic installation
   of updates is not included.

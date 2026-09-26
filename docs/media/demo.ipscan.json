@@ -1,0 +1,76 @@
+{
+  "version": 1,
+  "createdAt": "2026-09-26T12:00:00Z",
+  "rangeInput": "127.0.0.1, 192.0.2.0/24",
+  "hosts": [
+    {
+      "ip": "127.0.0.1",
+      "hostname": "macbook-demo.local",
+      "vendor": "Apple",
+      "rttMs": 0.3,
+      "ttl": 64,
+      "openPorts": [
+        22,
+        5900
+      ]
+    },
+    {
+      "ip": "192.0.2.1",
+      "hostname": "router.demo",
+      "vendor": "Example Networks",
+      "rttMs": 0.8,
+      "ttl": 64,
+      "openPorts": [
+        80,
+        443
+      ]
+    },
+    {
+      "ip": "192.0.2.20",
+      "hostname": "studio-nas.demo",
+      "vendor": "QNAP Systems",
+      "rttMs": 1.1,
+      "ttl": 64,
+      "openPorts": [
+        22,
+        443,
+        445
+      ]
+    },
+    {
+      "ip": "192.0.2.30",
+      "hostname": "office-printer.demo",
+      "vendor": "Example Printing",
+      "rttMs": 2.1,
+      "ttl": 64,
+      "openPorts": [
+        631,
+        9100
+      ]
+    },
+    {
+      "ip": "192.0.2.40",
+      "hostname": "iphone-demo.local",
+      "rttMs": 1.6,
+      "ttl": 64,
+      "openPorts": []
+    },
+    {
+      "ip": "192.0.2.50",
+      "hostname": "lab-web.demo",
+      "rttMs": 0.9,
+      "ttl": 64,
+      "openPorts": [
+        80,
+        443,
+        8080
+      ]
+    }
+  ],
+  "labels": {
+    "127.0.0.1": "Studio #work",
+    "192.0.2.20": "Shared storage #lab",
+    "192.0.2.30": "Office #print",
+    "192.0.2.50": "Web sandbox #lab"
+  }
+}

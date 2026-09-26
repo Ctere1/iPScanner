@@ -49,7 +49,7 @@ xcrun notarytool store-credentials "ipscanner-notary"
 Kaynak: [Apple — notarization iş akışı](https://developer.apple.com/documentation/security/customizing-the-notarization-workflow).
 
 Not: 2026-09-26 yerel GUI ve CLI Developer ID ile imzalandı ve doğrulandı.
-`ipscanner-notary` profili henüz kayıtlı değil. Sertifika adında Türkçe karakter
+`ipscanner-notary` profili kaydedildi; uygulama ve DMG Apple tarafından kabul edildi, stapling ve Gatekeeper kontrolleri geçti. Sertifika adında Türkçe karakter
 kodlaması sorunu yaşanırsa `security find-identity -v -p codesigning` çıktısındaki
 40 karakterlik sertifika parmak izi SIGNING_IDENTITY olarak kullanılabilir.
 

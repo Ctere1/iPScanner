@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="360" viewBox="0 0 1200 360" role="img" aria-labelledby="title desc">
+<title id="title">iPScanner — Native network discovery for macOS</title>
+<desc id="desc">A compact IPv4 scanner with device details, snapshots and exports. Apple Silicon and Intel.</desc>
+<defs><linearGradient id="bg" x2="1" y2="1"><stop stop-color="#0a172c"/><stop offset="1" stop-color="#143555"/></linearGradient><radialGradient id="glow"><stop stop-color="#25b9e7" stop-opacity=".22"/><stop offset="1" stop-color="#25b9e7" stop-opacity="0"/></radialGradient></defs>
+<rect width="1200" height="360" rx="20" fill="url(#bg)"/>
+<circle cx="972" cy="180" r="220" fill="url(#glow)"/>
+<g font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Arial,sans-serif">
+<text x="54" y="58" fill="#80d7fb" font-size="14" letter-spacing="2">NATIVE NETWORK DISCOVERY</text>
+<text x="50" y="134" fill="#fff" font-size="62" font-weight="700" letter-spacing="-2">iPScanner</text>
+<text x="54" y="186" fill="#d3e4f6" font-size="27">Find devices. Inspect services. Keep a snapshot.</text>
+<text x="54" y="226" fill="#9eb6cc" font-size="18">A compact tool for everyday network work on macOS.</text>
+<g fill="#153a55" stroke="#315772"><rect x="54" y="273" width="129" height="35" rx="17"/><rect x="195" y="273" width="179" height="35" rx="17"/><rect x="386" y="273" width="146" height="35" rx="17"/></g>
+<g fill="#d3edf8" font-size="14"><text x="77" y="296">Native SwiftUI</text><text x="217" y="296">Apple Silicon + Intel</text><text x="407" y="296">Open source · MIT</text></g>
+<g fill="none" stroke="#387295" stroke-width="1"><circle cx="975" cy="178" r="122" opacity=".45"/><circle cx="975" cy="178" r="80" opacity=".4"/></g>
+<g stroke="#479aba" stroke-width="2"><path d="M975 178L879 99M975 178L1091 108M975 178L873 249M975 178L1068 263"/></g>
+<g fill="#123550" stroke="#56c8ed" stroke-width="2"><rect x="851" y="74" width="56" height="46" rx="12"/><rect x="1063" y="84" width="56" height="46" rx="12"/><rect x="845" y="225" width="56" height="46" rx="12"/><rect x="1040" y="240" width="56" height="46" rx="12"/></g>
+<g fill="none" stroke="#cfedf8" stroke-width="2"><rect x="866" y="86" width="26" height="17" rx="2"/><path d="M862 108h34M1076 97h30M1076 106h30M1076 115h30M859 239h28v17h-28zM863 234h20M1054 257h28M1054 266h28"/></g>
+<circle cx="975" cy="178" r="34" fill="#096894" stroke="#64dfff" stroke-width="2"/><circle cx="975" cy="178" r="10" fill="#8de8ff"/>
+<g fill="#65d6a5"><circle cx="901" cy="77" r="5"/><circle cx="1113" cy="87" r="5"/><circle cx="895" cy="228" r="5"/><circle cx="1090" cy="243" r="5"/></g>
+<text x="928" y="328" fill="#87b8cc" font-size="11" letter-spacing="2">YOUR LOCAL NETWORK</text>
+</g></svg>

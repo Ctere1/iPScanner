@@ -1,0 +1,32 @@
+{
+  "date": "2026-09-26",
+  "version": "1.3.0",
+  "sourceCommit": "ff5c6397e2c2968d0f7bcb9a5d48704f03fcf492",
+  "appSubmission": {
+    "id": "507abc36-cbed-4e43-a5f4-1b07b300c825",
+    "status": "Accepted",
+    "message": "Processing complete"
+  },
+  "dmgSubmission": {
+    "status": "Accepted",
+    "id": "88e69f44-2e08-49ec-bddf-2a43256a6871",
+    "message": "Processing complete"
+  },
+  "dmgBytes": 6533685,
+  "dmgSHA256": "51c5cba4dc82e028deeb24a5646624486348038dea581ed5fdfa0c8123788b0b",
+  "checks": [
+    "Developer ID GUI and CLI signatures",
+    "Hardened Runtime and secure timestamps",
+    "arm64 and x86_64 slices",
+    "app and DMG staple validation",
+    "Gatekeeper app and DMG: Notarized Developer ID",
+    "DMG integrity",
+    "mounted DMG app signature, layout and staple",
+    "SHA-256 verified"
+  ],
+  "notClaimed": [
+    "clean browser download installation",
+    "Intel/macOS14.4/Sequoia runtime acceptance",
+    "macOS27 topology capability and MAC access"
+  ]
+}

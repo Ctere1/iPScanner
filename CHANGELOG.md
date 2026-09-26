@@ -17,6 +17,7 @@ All notable changes to iPScanner are documented here. Format loosely follows
   status includes the last check attempt and release download link.
 
 ### Changed
+- Refresh the GitHub overview with a captioned UI walkthrough, current light/dark screenshots and a downloadable sample snapshot.
 - Ship a validated compact IEEE prefix index instead of raw registry address files.
 - Move legacy AFP/Telnet connections and raw vendor database access into Advanced.
 - Show connection launch failures and distinguish Wake-on-LAN packet delivery from wake confirmation.
