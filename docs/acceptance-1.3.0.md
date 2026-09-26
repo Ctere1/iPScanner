@@ -82,7 +82,7 @@ separately in the later signing phase.
 | Invalid Ed25519 update signature | Passed | Altered feed signature rejected; app stayed on build 1 |
 | Full local update | Passed | Signed test copy build 1 → notarized build 2; relaunch and GUI SHA-256 match |
 | Build 3 signing / app + DMG notarization | Passed | Both Accepted; staples, Gatekeeper, universal slices, DMG round trip checked |
-| Public GitHub update delivery | Environment pending | Empty feed until exact release assets are public |
+| Public GitHub release download and feed | Passed | v1.3.0 DMG downloaded without authentication; SHA-256 matches notarized candidate; generated feed promoted after publication. Production in-app installation from an older release remains untested. |
 | In-progress download cancellation / interrupted installation | Environment pending | Not exercised in this follow-up |
 | CI signing key | Environment pending | Workflow supports SPARKLE_PRIVATE_KEY; secret provisioning unverified |
 

@@ -21,5 +21,7 @@
     "installedGUI_SHA256": "52055afddf05beb44972c067915920a0d8a2746ed2bfc2f905c44bec32a2a904",
     "invalidSignatureRejected": true
   },
-  "publicReleasePublished": false
+  "publicReleasePublished": true,
+  "releaseURL": "https://github.com/canberkys/iPScanner/releases/tag/v1.3.0",
+  "publicDownloadSHA256Verified": true
 }
