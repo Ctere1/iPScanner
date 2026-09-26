@@ -9,12 +9,12 @@ come from the documentation range 192.0.2.0/24. Do not start a scan of the fixtu
 
 ## Walkthrough
 
-![Search a sample device list by tag](demo.gif)
+![Results, device details and export](demo.gif)
 
-This 5.5-second loop shows the actual search UI: all six sample devices, entering
-`#`, then narrowing the list to the two devices tagged `#lab`. It is cropped to
-search, addresses and labels for readability. The full UI is shown below.
-It does not represent live discovery or elapsed scan time.
+The 11-second tour shows three parts of the app: the full device table, device
+information and export choices. The README starts with the full static interface;
+the animation is available in an expandable tour. These are real UI captures of
+a fictional saved snapshot, not a live scan or performance benchmark.
 
 [Static tour cover](demo-poster.jpg)
 

@@ -20,20 +20,26 @@
 Find responding devices, inspect names and services, add searchable labels, and
 save or export what you find. Built with SwiftUI; signed in-app updates are powered by Sparkle.
 
-> **1.3.0 development preview:** these visuals show the current development version.
-> The local app and DMG are Developer ID signed and notarized; a GitHub Release has
-> not been published. Some platform and accessibility checks remain open in the
-> [acceptance record](docs/acceptance-1.3.0.md).
-> The published **v1.2.0 DMG has an opening issue** ([#10](https://github.com/canberkys/iPScanner/issues/10)).
-> Until a verified replacement is published, use the source build below.
+> **1.3.0 is available:** [Download the signed, notarized DMG](https://github.com/canberkys/iPScanner/releases/download/v1.3.0/iPScanner-v1.3.0.dmg).
+> Fixes the v1.2.0 opening issue ([#10](https://github.com/canberkys/iPScanner/issues/10)).
+> See the [release notes](https://github.com/canberkys/iPScanner/releases/tag/v1.3.0)
+> for validation details and known platform limitations.
 
 ## Demo
 
-![iPScanner tag search: all devices to matching lab devices](docs/media/demo.gif)
+![iPScanner device list with names, labels, vendors and open ports](docs/media/results-light.jpg)
 
-*A 5.5-second tag-search loop using a fictional saved snapshot. The view is
-cropped to keep labels readable; it does not show a live scan.*
-[Static overview](docs/media/demo-poster.jpg) · [Screenshot gallery and demo instructions](docs/media/README.md)
+<details>
+<summary><strong>Watch the short tour: results → device details → export</strong></summary>
+
+![iPScanner results, device details and export walkthrough](docs/media/demo.gif)
+
+An 11-second tour of actual app screens with a fictional saved snapshot. This is
+an interface walkthrough, not a live network scan.
+
+</details>
+
+[Screenshot gallery and sample snapshot](docs/media/README.md)
 
 ## Everyday tasks, one window
 
@@ -58,7 +64,7 @@ All device names, vendors and labels shown are sample data. [View full-size imag
 
 ## Get started
 
-When a verified replacement is available, download its DMG from [Releases](https://github.com/canberkys/iPScanner/releases),
+Download the latest DMG from [Releases](https://github.com/canberkys/iPScanner/releases),
 drag **iPScanner** to **Applications**, then open it.
 
 1. Choose your network from the subnet menu or enter a target you administer.
@@ -82,8 +88,7 @@ Opening details for the first row runs the ping monitor against localhost only.
 - **Automatic update checks:** optional daily checks through Sparkle.
   Manual checks are available in Help and Settings.
 - **In-app installation:** review release notes, download and install a signed update.
-  The public update feed will become active with the first published 1.3.0 release.
-  Automatic download and installation are not included yet.
+  Install 1.3.0 manually once to receive future releases through Sparkle.
 - **Feedback:** review your draft in the app before sending it through Cloudflare
   to a **public GitHub issue**. A GitHub account is not required to submit in-app.
 
@@ -152,13 +157,12 @@ a universal build is not proof of testing on Intel hardware or every supported O
 
 ## What's next
 
-Finish the remaining compatibility and accessibility checks, then publish the
-refreshed icon and Sparkle update installer. History, IPv6 and menu-bar mode
+Continue the remaining compatibility and accessibility checks. History, IPv6 and menu-bar mode
 are outside the current update. [Next-phase plan](docs/next-phase-plan-tr.md).
 
 ## Project
 
-[Changelog](CHANGELOG.md) · [Draft 1.3.0 notes](docs/release-notes-1.3.0.md) ·
+[Changelog](CHANGELOG.md) · [1.3.0 notes](docs/release-notes-1.3.0.md) ·
 [Bug reports and feature requests](https://github.com/canberkys/iPScanner/issues/new/choose) ·
 [Website](https://canberk.me/ipscanner/)
 

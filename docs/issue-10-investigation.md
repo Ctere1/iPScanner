@@ -30,25 +30,13 @@ and reject identical contents. Release checks also exercise CLI `--help`, verify
 both architectures, Developer ID signatures, Hardened Runtime, notarization,
 and the app extracted from the final DMG.
 
-## Limits
+## Release verification
 
-The artifact defect was reproduced by executing the published binary on an
-Apple Silicon Mac running macOS 27.0. This is not a Sequoia 15.8 clean-install
-test. Sequoia and macOS 14.4 verification, final Developer ID signing and a
-browser-downloaded DMG first-launch test remain release gates.
+Version 1.3.0 build 3 keeps the GUI and CLI separate. The universal app and DMG
+passed Developer ID verification, Apple notarization, stapling and Gatekeeper.
+The app opens on this Apple Silicon macOS 27 host. Regression tests reject the
+original overwritten-executable layout. The exact Sequoia 15.8 environment from
+the report was not available; that platform validation remains open.
 
-## Suggested issue reply (not posted)
-
-Thanks for reporting this. We found a packaging bug in the v1.2.0 DMG: the
-command-line executable (`ipscanner`) overwrote the GUI executable
-(`iPScanner`) on a case-insensitive filesystem. Opening the app therefore runs
-the CLI without arguments and immediately exits. This explains why the
-Gatekeeper workaround did not help.
-
-We are preparing a corrected package with the CLI in a separate Helpers
-directory, plus Developer ID signing and notarization. The replacement has
-not been published yet. Once it is available, please try a fresh installation
-on your Sequoia Macs. If it still fails, please share the output from
-`/Applications/iPScanner.app/Contents/MacOS/iPScanner` and any matching
-`iPScanner*.ips` report in `~/Library/Logs/DiagnosticReports`, after removing
-personal information. We will keep this issue open until that is verified.
+The confirmed artifact defect is fixed in the 1.3.0 release. The reporter is
+invited to comment if opening still fails on their Sequoia machines.

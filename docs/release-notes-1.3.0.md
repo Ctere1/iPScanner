@@ -1,7 +1,7 @@
-# iPScanner 1.3.0 — draft release notes
+# iPScanner 1.3.0
 
-Unpublished local candidate. Derived from `CHANGELOG.md`; finalize the version
-and date only after the acceptance gates pass.
+Released 2026-09-26. Download the DMG, drag iPScanner to Applications and open it.
+The application is Developer ID signed and notarized; no quarantine-removal command is needed.
 
 ## Fixed
 
@@ -21,7 +21,7 @@ and date only after the acceptance gates pass.
   empty-search states. Details explain vendor status and device-type estimates.
 - Native Help and Settings, previewed feedback through Cloudflare to public GitHub
   issues, and optional daily Sparkle checks with signed in-app update installation.
-- Refreshed radar app icon and a shorter, focused tag-search demo.
+- Refreshed radar app icon and a short product tour.
 - Put AFP, Telnet and database access under Advanced. Explain missing connection
   handlers and distinguish Wake-on-LAN packet sending from confirmed device wake.
 - Bundle a compact, build-validated IEEE index. The final build 3 universal app is
@@ -50,6 +50,7 @@ port/timeout/cancellation checks and packaged CLI profiles pass. See
   they are explicitly unknown. Source hashes are pinned in the generated index.
 - The current local app and CLI are Developer ID signed with Hardened Runtime
   and secure timestamps. Apple accepted the app and DMG; stapling, image integrity
-  and local Gatekeeper assessment passed. Clean downloaded-DMG installation and
-  GitHub Release publication remain pending. A local Sparkle installation and invalid-signature rejection passed.
-  Public-feed delivery and clean downloaded-DMG installation remain release gates.
+  and local Gatekeeper assessment passed. A local Sparkle installation and invalid-signature rejection passed.
+  A clean downloaded-DMG first-launch test on Sequoia remains unverified.
+- Users of v1.2.0 must install 1.3.0 manually once; future updates can be installed
+  from within the app.
