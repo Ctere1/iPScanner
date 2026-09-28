@@ -5,6 +5,8 @@ All notable changes to iPScanner are documented here. Format loosely follows
 
 ## [Unreleased]
 
+## [1.3.1] — 2026-09-28
+
 ### Fixed
 
 - Restore Add Label / Edit Label in the device context menu; preserve labels when MAC information arrives later and when saving snapshots.

@@ -2,7 +2,7 @@
 # Signed release pipeline shared by local builds and GitHub Actions.
 set -euo pipefail
 cd "$(dirname "$0")/.."
-VERSION="${1:-1.3.0}"
+VERSION="${1:-1.3.1}"
 VERSION="${VERSION#v}"
 [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo 'Expected X.Y.Z version' >&2; exit 1; }
 : "${SIGNING_IDENTITY:?Set SIGNING_IDENTITY to your Developer ID Application identity}"

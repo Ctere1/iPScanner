@@ -5,9 +5,9 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Version (e.g. 1.3.0)'
+        description: 'Version (e.g. 1.3.1)'
         required: true
-        default: '1.3.0'
+        default: '1.3.1'
 permissions:
   contents: write
 jobs:
@@ -54,6 +54,7 @@ jobs:
         run: |
           set -euo pipefail
           VERSION="${INPUT_VERSION:-${GITHUB_REF_NAME#v}}"
+          echo "RELEASE_VERSION=$VERSION" >> "$GITHUB_ENV"
           export NOTARY_KEYCHAIN="$RUNNER_TEMP/ipscanner-signing.keychain-db"
           ./scripts/build-dmg.sh "$VERSION"
       - name: Upload verified artifacts
@@ -70,7 +71,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           draft: true
-          body_path: docs/release-notes-1.3.0.md
+          body_path: docs/release-notes-${{ env.RELEASE_VERSION }}.md
           files: |
             build/release-*/*.dmg
             build/release-*/*.sha256
