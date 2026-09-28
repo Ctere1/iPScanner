@@ -1,4 +1,5 @@
 import Foundation
+import Darwin
 
 protocol NetworkScanning: Sendable {
     func scan(_ range: ScanRange) -> AsyncStream<ScanEvent>
@@ -160,16 +161,23 @@ struct NetworkScanner: NetworkScanning {
 
     /// ICMP ping via /sbin/ping. nil if host did not reply.
     static func ping(_ ip: String) async -> DiscoverResult? {
+        await runPing(executable: URL(fileURLWithPath: "/sbin/ping"),
+                      arguments: ["-n", "-c", "1", "-W", String(pingTimeoutMs), "-t", "1", ip],
+                      timeout: Double(pingTimeoutMs) / 1000 + 0.1)
+    }
+
+    /// Bounds the entire process, including route resolution; -W alone only limits reply waiting.
+    static func runPing(executable: URL, arguments: [String], timeout: Double) async -> DiscoverResult? {
         let runner = PingProcess()
         return await withTaskCancellationHandler {
             await withCheckedContinuation { (continuation: CheckedContinuation<DiscoverResult?, Never>) in
                 DispatchQueue.global(qos: .userInitiated).async {
                     let process = Process()
-                    process.executableURL = URL(fileURLWithPath: "/sbin/ping")
-                    process.arguments = ["-c", "1", "-W", String(pingTimeoutMs), ip]
+                    process.executableURL = executable
+                    process.arguments = arguments
                     let stdout = Pipe()
                     process.standardOutput = stdout
-                    process.standardError = Pipe()
+                    process.standardError = FileHandle.nullDevice
 
                     do {
                         guard try runner.start(process) else {
@@ -181,8 +189,12 @@ struct NetworkScanner: NetworkScanning {
                         return
                     }
 
+                    let deadline = DispatchWorkItem { runner.cancel() }
+                    DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + timeout, execute: deadline)
                     let data = stdout.fileHandleForReading.readDataToEndOfFile()
                     process.waitUntilExit()
+                    deadline.cancel()
+                    runner.finish()
 
                     guard process.terminationStatus == 0,
                           let output = String(data: data, encoding: .utf8),
@@ -224,10 +236,16 @@ private final class PingProcess: @unchecked Sendable {
         return true
     }
 
+    func finish() {
+        lock.lock()
+        defer { lock.unlock() }
+        process = nil
+    }
+
     func cancel() {
         lock.lock()
         defer { lock.unlock() }
         cancelled = true
-        if let process, process.isRunning { process.terminate() }
+        if let process, process.isRunning { kill(process.processIdentifier, SIGKILL) }
     }
 }

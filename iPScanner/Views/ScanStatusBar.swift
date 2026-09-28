@@ -29,7 +29,7 @@ extension ContentView {
             if !controller.hosts.isEmpty {
                 HStack(spacing: 8) {
                     Text("\(controller.aliveCount) alive").foregroundStyle(.green)
-            if !controller.searchQuery.isEmpty && !controller.hosts.isEmpty {
+            if controller.hasResultConstraints {
                 Text("•").foregroundStyle(.secondary)
                 Text("\(controller.filteredHosts.count) of \(controller.hosts.count) match")
                     .foregroundStyle(.tint)

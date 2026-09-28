@@ -34,7 +34,7 @@ struct SnapshotDiff {
         )
 
         let baselineByAnchor: [String: ScanSnapshot.HostRecord] = Dictionary(
-            baseline.hosts.map { (MACAddress.anchor(mac: $0.mac, ip: $0.ip), $0) },
+            baseline.hosts.filter { $0.status == .alive }.map { (MACAddress.anchor(mac: $0.mac, ip: $0.ip), $0) },
             uniquingKeysWith: { _, last in last }
         )
 

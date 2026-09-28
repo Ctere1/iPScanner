@@ -61,6 +61,21 @@ final class ScanController {
         filterHasOpenPorts || filterHasLabel || filterHasVendor || filterIdentifiedDevice
     }
 
+    var activeFilterNames: [String] {
+        var names: [String] = []
+        if filterHasOpenPorts { names.append("Open ports") }
+        if filterHasLabel { names.append("Labeled") }
+        if filterHasVendor { names.append("Vendor known") }
+        if filterIdentifiedDevice { names.append("Identified type") }
+        return names
+    }
+
+    // Dead probes are collected too; their presence does not mean a device was found.
+    var hasResultConstraints: Bool { hasActiveScopeFilters || !searchQuery.isEmpty }
+    var showsDiscoveryEmptyState: Bool {
+        filteredHosts.isEmpty && !hasResultConstraints && aliveCount == 0
+    }
+
     func clearScopeFilters() {
         filterHasOpenPorts = false
         filterHasLabel = false
@@ -147,6 +162,8 @@ final class ScanController {
         if let mac = host.mac, let address = MACAddress(mac) {
             for oldKey in labels.keys.filter({ MACAddress($0) == address }) { labels.removeValue(forKey: oldKey) }
         }
+        // Retire an IP fallback after enrichment supplies the stable MAC anchor.
+        labels.removeValue(forKey: host.ip)
         let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines)
         if let trimmed, !trimmed.isEmpty {
             labels[key] = trimmed
@@ -189,6 +206,8 @@ final class ScanController {
     }
 
     func loadSavedRange(_ range: String) {
+        guard !isScanning else { return }
+        clearImportedFile()
         rangeInput = range
     }
 
@@ -484,7 +503,7 @@ final class ScanController {
         var relevantLabels: [String: String] = [:]
         for h in hosts {
             let key = anchor(for: h)
-            if let label = labels[key] {
+            if let label = label(for: h) {
                 relevantLabels[key] = label
             }
         }
@@ -519,7 +538,7 @@ final class ScanController {
     }
 
     func change(for host: Host) -> HostChange? {
-        diff?.changesByAnchor[host.mac ?? host.ip]
+        diff?.changesByAnchor[anchor(for: host)]
     }
 
     func applySnapshot(_ snapshot: ScanSnapshot) {
@@ -559,6 +578,7 @@ final class ScanController {
         warnings = []
         state = .done(scanned: restored.count, total: restored.count)
         lastError = nil
+        recomputeDiff()
     }
 
     func deleteHosts(_ ids: Set<Host.ID>) {
@@ -567,6 +587,7 @@ final class ScanController {
         hosts.removeAll { ids.contains($0.id) }
         for ip in removedIPs { hostByIp.removeValue(forKey: ip) }
         selection.subtract(ids)
+        recomputeDiff()
     }
 
     func refreshHost(_ id: Host.ID) async {
@@ -587,6 +608,7 @@ final class ScanController {
             hosts[idx].ttl = nil
             hosts[idx].vendorStatus = .historical
             hostByIp[ip] = hosts[idx]
+            recomputeDiff()
             return
         }
 
@@ -614,6 +636,7 @@ final class ScanController {
         hosts[idx2].openPorts = []
         hosts[idx2].serviceTitle = nil
         hostByIp[ip] = hosts[idx2]
+        recomputeDiff()
     }
 
     func runWakeOnLAN(for ids: Set<Host.ID>) async {

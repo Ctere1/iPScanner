@@ -6,19 +6,23 @@ extension ContentView {
 
     @ViewBuilder
     var content: some View {
-        if controller.hosts.isEmpty {
+        if controller.hosts.isEmpty || controller.showsDiscoveryEmptyState {
             emptyState
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if controller.filteredHosts.isEmpty {
             ContentUnavailableView {
                 Label("No matching devices", systemImage: "line.3.horizontal.decrease.circle")
             } description: {
-                Text("Devices were found, but none match the current search and filters.")
+                Text(controller.isScanning
+                     ? "No devices match yet. Scanning is still in progress; device names, vendors and ports may arrive later."
+                     : "Devices were found, but none match the current search and filters.")
+                if !controller.activeFilterNames.isEmpty {
+                    Text("Filters: " + controller.activeFilterNames.joined(separator: ", "))
+                }
             } actions: {
                 Button("Clear Search and Filters") {
                     controller.searchQuery = ""
                     controller.clearScopeFilters()
-                    controller.showDeadHosts = true
                 }
             }
         } else {

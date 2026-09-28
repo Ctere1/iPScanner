@@ -11,10 +11,12 @@ struct ContentView: View {
     @State var controller = ScanController()
     @State var mdns = MDNSDiscovery()
     @State var showingPortScan = false
+    @State var portScanTargetIDs: Set<Host.ID> = []
     @State var portsInput = PortScanner.defaultPortsInput
     @State var portError: String?
     @State var fetchBanners = true
     @State var renamingRange: SavedRange?
+    @State var labelingHost: Host?
     @State var showingWarnings = false
     @State var showingDiff = false
     @State var importAlert: ImportAlert?
@@ -88,7 +90,7 @@ struct ContentView: View {
                 anchor: inspectedHost.map { controller.anchor(for: $0) },
                 services: inspectedHost.map { mdns.services(for: $0.ip) } ?? [],
                 onLabelChange: { host, value in
-                    controller.setLabel(value, for: host)
+                    controller.setLabel(value, for: self.host(forID: host.id) ?? host)
                 }
             )
         }
@@ -122,12 +124,12 @@ struct ContentView: View {
         } detail: {
             HStack(spacing: 0) {
                 VStack(spacing: 0) {
-                    toolbar
+                    toolbar.fixedSize(horizontal: false, vertical: true)
                     if !controller.hosts.isEmpty { resultsToolbar }
                     Divider()
-                    content
+                    content.frame(maxWidth: .infinity, maxHeight: .infinity)
                     Divider()
-                    statusBar
+                    statusBar.fixedSize(horizontal: false, vertical: true)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
 
@@ -182,6 +184,12 @@ struct ContentView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .iPScannerCommandClearComparison)) { _ in
             controller.clearComparison()
+        }
+        .sheet(item: $labelingHost) { host in
+            HostLabelSheet(host: host, initialValue: controller.label(for: host) ?? "") { value in
+                // Enrichment may have learned a MAC while the editor was open.
+                controller.setLabel(value, for: self.host(forID: host.id) ?? host)
+            }
         }
         .sheet(item: $renamingRange) { saved in
             RenameRangeSheet(
@@ -411,6 +419,9 @@ struct ContentView: View {
             controller.selection = [h.id]
             inspectorPresented = true
         }
+        Button(controller.label(for: h) == nil ? "Add Label…" : "Edit Label…", systemImage: "tag") {
+            labelingHost = h
+        }
         Section {
             Button("Open in Browser (http)", systemImage: "safari") {
                 HostActions.openBrowser(ip: h.ip)
@@ -452,9 +463,9 @@ struct ContentView: View {
                 }
             }
             Button("Port Scan…", systemImage: "network.badge.shield.half.filled") {
-                portError = nil
-                showingPortScan = true
+                beginPortScan(ids: [h.id])
             }
+            .disabled(controller.isScanning)
         }
         Section {
             Button("Copy IP", systemImage: "doc.on.doc") { HostActions.copy(h.ip) }
@@ -486,9 +497,9 @@ struct ContentView: View {
             }
         }
         Button("Port Scan… (\(hosts.count) hosts)", systemImage: "network.badge.shield.half.filled") {
-            portError = nil
-            showingPortScan = true
+            beginPortScan(ids: ids)
         }
+        .disabled(controller.isScanning)
         if wakeable > 0 {
             Button("Wake (\(wakeable) hosts)", systemImage: "power.circle.fill") {
                 Task { await controller.runWakeOnLAN(for: ids) }
@@ -509,7 +520,7 @@ struct ContentView: View {
     @ViewBuilder
     var portScanPopover: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Port scan for \(controller.selection.count) host(s)")
+            Text("Port scan for \(portScanTargetIDs.count) host(s)")
                 .font(.headline)
 
             TextField("Ports", text: $portsInput, prompt: Text("22, 80, 443, 8000-8100"))
@@ -592,6 +603,13 @@ struct ContentView: View {
         ExportService.rows(from: controller.filteredHosts) { controller.label(for: $0) }
     }
 
+    func writeExport(_ data: Data, to url: URL) {
+        do { try data.write(to: url, options: .atomic) }
+        catch {
+            importAlert = ImportAlert(title: "Could not save file", message: "Choose a writable location and try again. " + error.localizedDescription)
+        }
+    }
+
     func saveCSV() {
         let csv = ExportService.csv(rows: currentRows())
         let panel = NSSavePanel()
@@ -599,7 +617,7 @@ struct ContentView: View {
         panel.nameFieldStringValue = ExportService.defaultFileName(ext: "csv")
         panel.canCreateDirectories = true
         if panel.runModal() == .OK, let url = panel.url {
-            try? csv.data(using: .utf8)?.write(to: url)
+            writeExport(Data(csv.utf8), to: url)
         }
     }
 
@@ -610,7 +628,7 @@ struct ContentView: View {
         panel.nameFieldStringValue = ExportService.defaultFileName(ext: "json")
         panel.canCreateDirectories = true
         if panel.runModal() == .OK, let url = panel.url {
-            try? data.write(to: url)
+            writeExport(data, to: url)
         }
     }
 
@@ -631,7 +649,7 @@ struct ContentView: View {
         panel.nameFieldStringValue = ExportService.defaultFileName(ext: "txt")
         panel.canCreateDirectories = true
         if panel.runModal() == .OK, let url = panel.url {
-            try? text.data(using: .utf8)?.write(to: url)
+            writeExport(Data(text.utf8), to: url)
         }
     }
 
@@ -646,7 +664,7 @@ struct ContentView: View {
         panel.nameFieldStringValue = ExportService.defaultFileName(ext: "txt")
         panel.canCreateDirectories = true
         if panel.runModal() == .OK, let url = panel.url {
-            try? text.data(using: .utf8)?.write(to: url)
+            writeExport(Data(text.utf8), to: url)
         }
     }
 
@@ -725,7 +743,7 @@ struct ContentView: View {
         panel.nameFieldStringValue = SnapshotIO.defaultFileName()
         panel.canCreateDirectories = true
         if panel.runModal() == .OK, let url = panel.url {
-            try? data.write(to: url)
+            writeExport(data, to: url)
         }
     }
 
@@ -769,7 +787,7 @@ struct ContentView: View {
     }
 
     var portScanEstimate: PortScanEstimate? {
-        let hosts = controller.selection.count
+        let hosts = portScanTargetIDs.count
         guard hosts > 0,
               let parsed = PortScanner.parsePorts(portsInput) else { return nil }
         let ports = parsed.count
@@ -789,6 +807,13 @@ struct ContentView: View {
         )
     }
 
+    func beginPortScan(ids: Set<Host.ID>) {
+        guard !controller.isScanning, !ids.isEmpty else { return }
+        portScanTargetIDs = ids
+        portError = nil
+        showingPortScan = true
+    }
+
     func startPortScan() {
         guard let ports = PortScanner.parsePorts(portsInput) else {
             portError = "Invalid port input (e.g. 22, 80, 443 or 8000-8100)"
@@ -800,7 +825,7 @@ struct ContentView: View {
         }
         portError = nil
         showingPortScan = false
-        controller.runPortScan(ports: ports, fetchBanners: fetchBanners)
+        controller.runPortScan(ports: ports, fetchBanners: fetchBanners, targetIds: portScanTargetIDs)
     }
 
     // MARK: - Warnings popover

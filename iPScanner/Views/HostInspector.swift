@@ -34,6 +34,15 @@ struct HostInspector: View {
         .onDisappear {
             commitLabelIfChanged()
         }
+        .onChange(of: label) { _, updated in
+            if labelText.trimmingCharacters(in: .whitespacesAndNewlines) == originalLabel {
+                originalLabel = updated ?? ""
+                labelText = originalLabel
+            }
+        }
+        .onChange(of: host?.mac) { _, _ in
+            if editingHost?.id == host?.id { editingHost = host }
+        }
         .onChange(of: host?.id) { _, _ in
             commitLabelIfChanged()
             editingHost = host

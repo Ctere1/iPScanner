@@ -5,6 +5,16 @@ All notable changes to iPScanner are documented here. Format loosely follows
 
 ## [Unreleased]
 
+### Fixed
+
+- Restore Add Label / Edit Label in the device context menu; preserve labels when MAC information arrives later and when saving snapshots.
+- Keep scan controls at the top and status at the bottom when no rows are visible; explain active filters while discovery continues.
+- Bound ping process duration and skip ping name resolution so unresponsive addresses cannot prolong discovery unnecessarily.
+- Scan the right-clicked port-scan targets and disable the action while another scan is active.
+- Clear imported targets when selecting a saved network.
+- Exclude previously unresponsive targets from missing-device comparisons, normalize MAC badge keys, and refresh comparisons after loading, deleting or refreshing devices.
+- Show file-save failures and synchronize externally changed labels with the device inspector.
+
 ### Changed
 
 - Present installation in a compact branded disk-image window with a clear drag-to-Applications guide and Retina artwork.

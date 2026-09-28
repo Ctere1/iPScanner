@@ -20,6 +20,7 @@ struct MACAddress: Equatable, Sendable {
         guard let mac, let address = MACAddress(mac) else { return nil }
         // Keep labels saved under older unpadded ARP addresses.
         return labels.keys.sorted().first(where: { MACAddress($0) == address }).flatMap { labels[$0] }
+            ?? labels[ip] // A label may have been added before MAC enrichment completed.
     }
 
     init?(_ input: String) {

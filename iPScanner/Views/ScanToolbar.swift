@@ -61,7 +61,7 @@ extension ContentView {
                     if subnetCalcInput.isEmpty { subnetCalcInput = controller.rangeInput }
                     showingSubnetCalc = true
                 }
-                Button("Port Scan…") { showingPortScan = true }
+                Button("Port Scan…") { beginPortScan(ids: controller.selection) }
                     .disabled(controller.selection.isEmpty || controller.isScanning)
             } label: { Label("Tools", systemImage: "wrench.and.screwdriver").labelStyle(.iconOnly) }
             .help("Tools: import targets, calculate a subnet or scan ports")
@@ -100,10 +100,15 @@ extension ContentView {
                 }
                 .menuStyle(.borderlessButton)
                 .fixedSize()
-                .help("Filters")
+                .help(controller.hasActiveScopeFilters ? controller.activeFilterNames.joined(separator: ", ") : "Filters")
                 .accessibilityLabel("Filters")
 
-
+                if controller.hasActiveScopeFilters {
+                    Button("Clear filters (\(controller.activeFilterNames.count))") {
+                        controller.clearScopeFilters()
+                    }
+                    .help(controller.activeFilterNames.joined(separator: ", "))
+                }
 
                 // Hidden ⌘C handler — receives keyboard shortcut without taking visual space.
                 Button("") { copySelectedIPs() }
