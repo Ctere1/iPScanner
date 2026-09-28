@@ -14,7 +14,7 @@ in Sparkle's native window, which also shows release notes.
 - Ed25519 update signatures use the **ipscanner** Keychain account. The private key
   is never embedded or committed. `SUPublicEDKey` is the public verification key.
 - `SUVerifyUpdateBeforeExtraction` requires signature verification before unpacking.
-- Build numbers must increase; the published 1.3.0 release uses build **3**.
+- Build numbers must increase; 1.3.0 uses build **3** and 1.3.1 uses build **4**.
 - Debug disables Hardened Runtime for ad-hoc local builds; Release keeps it enabled.
 
 ## Release order
@@ -29,8 +29,9 @@ in Sparkle's native window, which also shows release notes.
 5. Only then promote the generated `appcast.xml` to the main branch. Never expose
    an update pointing at a draft or missing asset.
 
-The public feed advertises the verified v1.3.0 build 3 release. The previous v1.2.0 app has no
-Sparkle installer, so users must install 1.3.0 manually once.
+The public feed advertises v1.3.1 build 4. The previous v1.2.0 app has no
+Sparkle installer, so those users must install the latest DMG manually once.
+Production 1.3.0 → 1.3.1 installation is awaiting the owner’s manual test.
 
 ## CI credentials
 

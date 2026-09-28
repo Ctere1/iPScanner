@@ -3,70 +3,48 @@
     <channel>
         <title>iPScanner</title>
         <item>
-            <title>1.3.0</title>
-            <pubDate>Sat, 26 Sep 2026 19:34:49 +0300</pubDate>
+            <title>1.3.1</title>
+            <pubDate>Mon, 28 Sep 2026 18:54:15 +0300</pubDate>
             <link>https://github.com/canberkys/iPScanner</link>
-            <sparkle:version>3</sparkle:version>
-            <sparkle:shortVersionString>1.3.0</sparkle:shortVersionString>
+            <sparkle:version>4</sparkle:version>
+            <sparkle:shortVersionString>1.3.1</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>14.4</sparkle:minimumSystemVersion>
-            <description sparkle:format="markdown"><![CDATA[# iPScanner 1.3.0
+            <description sparkle:format="markdown"><![CDATA[# iPScanner 1.3.1
 
-Released 2026-09-26. Download the DMG, drag iPScanner to Applications and open it.
-The application is Developer ID signed and notarized; no quarantine-removal command is needed.
+Released 2026-09-28. A focused update for scanning, labels and everyday actions.
 
 ## Fixed
 
-- Prevent the GUI/CLI filename collision that stopped the v1.2.0 app opening (#10).
-- Keep discovery, enrichment, ports and banners in one cancellable scan lifecycle.
-  Late results cannot replace a newer scan or loaded snapshot; automatic repeats
-  wait for completion. Imported targets work with an empty range field.
-- Validate complete MAC addresses, keep local/group addresses separate from vendor
-  matches, clear outdated vendor information and retain old MAC-based labels.
-- Avoid device-type guesses based on a DNS suffix or a generic vendor/web port.
-- Remove vanished Bonjour records and reject stale resolutions after restart.
-- Bound ARP queries and display collection errors and macOS 27 access guidance.
+- Restore **Add Label / Edit Label** in the device context menu. Labels survive MAC enrichment and snapshot saves.
+- Keep scan controls and status in place when results are empty, and explain active filters while scanning.
+- Limit ping process duration and avoid ping name resolution to reduce unnecessary waits on unresponsive addresses.
+- Port Scan uses the devices you right-clicked, even when another row is selected.
+- Selecting a saved network replaces previously imported file targets.
+- Snapshot comparisons no longer count previously unresponsive addresses as missing devices; change badges and counts stay current.
+- Show file-save failures and keep the inspector's label field in sync with edits.
 
-## New and changed
+## Changed
 
-- Compact scanning controls, optional sidebar, adaptive device details and clear
-  empty-search states. Details explain vendor status and device-type estimates.
-- Native Help and Settings, previewed feedback through Cloudflare to public GitHub
-  issues, and optional daily Sparkle checks with signed in-app update installation.
-- Refreshed radar app icon and a short product tour.
-- Put AFP, Telnet and database access under Advanced. Explain missing connection
-  handlers and distinguish Wake-on-LAN packet sending from confirmed device wake.
-- Bundle a compact, build-validated IEEE index. The final build 3 universal app is
-  11.85 MB of regular files; its compressed DMG is 6.61 MB.
+- A compact installer window with Retina artwork and clear drag-to-Applications instructions.
+- Cleaned up repository artwork and documentation.
 
-## Compatibility
+## Update and compatibility
 
-Native SwiftUI, IPv4, macOS deployment target 14.4, Apple Silicon and Intel binary
-slices. Sparkle 2.9.6 is the GUI’s update framework; the CLI remains dependency-free. Existing snapshot fields, CSV
-columns and CLI arguments remain. `vendorStatus` is optional JSON/snapshot metadata.
+Use **Check for Updates…** in iPScanner 1.3.0 to download and install this version.
+Users of 1.2.0 must install the DMG manually. Universal Apple Silicon + Intel;
+macOS 14.4 deployment target. Developer ID signed and notarized, with an
+Ed25519-signed update archive. Existing settings and snapshot formats are retained.
 
-**CLI location:** `iPScanner.app/Contents/Helpers/ipscanner` replaces the colliding
-`Contents/MacOS/ipscanner` location. Update scripts that use the old path.
+## Validation and limitations
 
-## Validation and known limitations
-
-190 application tests and 6 Worker tests pass. Controlled localhost HTTP/SSH,
-port/timeout/cancellation checks and packaged CLI profiles pass. See
-`acceptance-1.3.0.md` for methods and pending coverage.
-
-- macOS 27 can require Network Topology Observation capability/provisioning for MAC
-  access. Actual MAC collection on this host remains pending signed verification.
-- Intel hardware, macOS 14.4/Sequoia runtime checks, full VoiceOver and the exact
-  light/dark window-size matrix remain pending.
-- Registry source retrieval dates were not recorded in the original project;
-  they are explicitly unknown. Source hashes are pinned in the generated index.
-- The current local app and CLI are Developer ID signed with Hardened Runtime
-  and secure timestamps. Apple accepted the app and DMG; stapling, image integrity
-  and local Gatekeeper assessment passed. A local Sparkle installation and invalid-signature rejection passed.
-  A clean downloaded-DMG first-launch test on Sequoia remains unverified.
-- Users of v1.2.0 must install 1.3.0 manually once; future updates can be installed
-  from within the app.
+201 automated application tests passed, including 11 new regressions. Universal
+GUI/CLI builds and packaged Quick, Standard and Deep localhost scans passed.
+The new UI still needs a full visual pass and full-subnet performance comparison.
+Intel hardware, older macOS runtime coverage and macOS 27 MAC-access limitations
+remain as documented. Production 1.3.0 → 1.3.1 in-app installation is not yet
+claimed as tested; the owner will perform it after publication.
 ]]></description>
-            <enclosure url="https://github.com/canberkys/iPScanner/releases/download/v1.3.0/iPScanner-v1.3.0.dmg" length="6613102" type="application/octet-stream" sparkle:edSignature="xKq3njtcYf154E+rl+06cJGkIfNtQtoFqK4nh8NwmYxwLwiJJ4dqQgG6fCjOlmi6PyMJT/h1mZbsDbLE4ipcAA=="/>
+            <enclosure url="https://github.com/canberkys/iPScanner/releases/download/v1.3.1/iPScanner-v1.3.1.dmg" length="8269348" type="application/octet-stream" sparkle:edSignature="NDSEEcFLZ0neIE9qDO7S2Rsc7taMg6Yw7L8SOSZlpkT0jTWRTMSLJPJ4zJcbEfiP2FPj9C8ZtXTMpmKD8QElBw=="/>
         </item>
     </channel>
 </rss>

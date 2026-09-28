@@ -20,9 +20,9 @@
 Find responding devices, inspect names and services, add searchable labels, and
 save or export what you find. Built with SwiftUI; signed in-app updates are powered by Sparkle.
 
-> **1.3.0 is available:** [Download the signed, notarized DMG](https://github.com/canberkys/iPScanner/releases/download/v1.3.0/iPScanner-v1.3.0.dmg).
+> **1.3.1 is available:** [Download the signed, notarized DMG](https://github.com/canberkys/iPScanner/releases/download/v1.3.1/iPScanner-v1.3.1.dmg).
 > Fixes the v1.2.0 opening issue ([#10](https://github.com/canberkys/iPScanner/issues/10)).
-> See the [release notes](https://github.com/canberkys/iPScanner/releases/tag/v1.3.0)
+> See the [release notes](https://github.com/canberkys/iPScanner/releases/tag/v1.3.1)
 > for validation details and known platform limitations.
 
 ## Demo
@@ -88,7 +88,7 @@ Opening details for the first row runs the ping monitor against localhost only.
 - **Automatic update checks:** optional daily checks through Sparkle.
   Manual checks are available in Help and Settings.
 - **In-app installation:** review release notes, download and install a signed update.
-  Install 1.3.0 manually once to receive future releases through Sparkle.
+  Install the latest DMG manually once to receive future releases through Sparkle.
 - **Feedback:** review your draft in the app before sending it through Cloudflare
   to a **public GitHub issue**. A GitHub account is not required to submit in-app.
 
@@ -162,7 +162,7 @@ are outside the current update. [Follow-up work](docs/next-phase-plan-tr.md).
 
 ## Project
 
-[Changelog](CHANGELOG.md) · [1.3.0 notes](docs/release-notes-1.3.0.md) ·
+[Changelog](CHANGELOG.md) · [1.3.1 notes](docs/release-notes-1.3.1.md) ·
 [Bug reports and feature requests](https://github.com/canberkys/iPScanner/issues/new/choose) ·
 [Website](https://canberk.me/projects/ipscanner/)
 

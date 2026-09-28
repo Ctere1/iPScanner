@@ -6,6 +6,9 @@ notarization, DMG ve checksum tamamlandı. #10'daki paketleme hatası giderildi 
 issue kapatıldı. Üçüncü taraf bağımlılığı eklememe kararı Sparkle için değiştirildi;
 CLI'ye Sparkle bağımlılığı eklenmedi.
 
+1.3.1 (28 Eylül): tarama, etiket ve karşılaştırma düzeltmeleri; yeni DMG düzeni.
+201 test geçti. Gerçek 1.3.0 → 1.3.1 güncellemesini kullanıcı deneyecek.
+
 ## Doğrulama öncelikleri
 
 - macOS 27 MAC erişimi için Network Topology Observation capability ve GUI/CLI

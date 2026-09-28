@@ -1,6 +1,6 @@
 # 1.3.1 candidate validation
 
-2026-09-28, Apple Silicon, macOS 27 / Xcode 27. Not published.
+2026-09-28, Apple Silicon, macOS 27 / Xcode 27. Published as 1.3.1 build 4.
 
 ## Regression coverage
 
@@ -47,4 +47,10 @@ Packaged CLI scanned localhost successfully in Quick (0.37 s), Standard (1.16 s)
 and Deep (2.13 s), producing valid JSON and exit code 0 in each case.
 A second source review confirmed the context-target, saved-range, inspector and
 export-write fixes. It did not replace native UI testing.
-No GitHub release or appcast update was made.
+The exact verified DMG was published to GitHub and downloaded publicly before
+promoting the build 4 appcast. Production in-app installation is left to the
+owner and remains unverified here.
+
+The DMG also passed notarization, stapling, mounted app checks and Gatekeeper.
+DMG notary submission: `56cb65d3-2f76-44ae-8457-59b03707c9f5`.
+Source regression CI passed: https://github.com/canberkys/iPScanner/actions/runs/36446731721 .
